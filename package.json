@@ -1,7 +1,7 @@
 {
   "name": "next-api-bridge",
   "version": "0.1.0",
-  "description": "Cookie-aware API bridge for Next.js Server Actions",
+  "description": "Cookie-aware API bridge for Next.js App Router with Server Actions. Handles auth, cookies, and session flow entirely on the server for external backends.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -21,12 +21,23 @@
   },
   "keywords": [
     "nextjs",
+    "next.js",
     "server-actions",
+    "app-router",
     "cookies",
     "api",
     "bridge",
+    "middleware",
+    "route-handlers",
     "auth",
-    "session"
+    "authentication",
+    "session",
+    "typescript",
+    "http",
+    "fetch",
+    "backend",
+    "api-client",
+    "server-components"
   ],
   "license": "MIT",
   "author": "alidantech.org",
