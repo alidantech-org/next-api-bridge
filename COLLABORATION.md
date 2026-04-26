@@ -209,13 +209,29 @@ This outputs to the `dist/` directory with:
 
 ## Publishing
 
-1. Update version in `package.json`
-2. Run pre-publish checks:
+Publishing is automated via GitHub Actions. To publish a new version:
+
+1. Update version in `package.json` (follow semantic versioning)
+2. Commit and push your changes
+3. Create and push a version tag:
+```bash
+git tag v0.1.5
+git push origin v0.1.5
+```
+
+The GitHub Actions workflow will automatically:
+- Run type checking
+- Build the package
+- Publish to npm using Trusted Publishing (OIDC)
+
+You can also trigger the workflow manually from the GitHub Actions tab.
+
+### Manual Publishing (Fallback)
+
+If you need to publish manually:
+
 ```bash
 npm run prepublishOnly
-```
-3. Publish to npm:
-```bash
 npm publish
 ```
 
