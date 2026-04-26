@@ -1,0 +1,70 @@
+{
+  "name": "next-api-bridge",
+  "version": "0.1.0",
+  "description": "Cookie-aware API bridge for Next.js Server Actions",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "assets"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "keywords": [
+    "nextjs",
+    "server-actions",
+    "cookies",
+    "api",
+    "bridge",
+    "auth",
+    "session"
+  ],
+  "license": "MIT",
+  "author": "alidantech.org",
+  "homepage": "https://alidantech.org",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alidantech-org/next-api-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/alidantech-org/next-api-bridge/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./form": {
+      "types": "./dist/form/index.d.ts",
+      "import": "./dist/form/index.js",
+      "require": "./dist/form/index.cjs"
+    }
+  },
+  "peerDependencies": {
+    "next": ">=13.0.0"
+  },
+  "peerDependenciesMeta": {
+    "sonner": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "next": "^15.0.0"
+  }
+}
