@@ -10,10 +10,23 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: production
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if tag is from main branch
+        run: |
+          BRANCH=$(git branch --contains $(git rev-parse HEAD) | grep main || true)
+          if [ -z "$BRANCH" ]; then
+            echo "❌ Tag must be pushed from main branch"
+            echo "Current branches containing this commit:"
+            git branch --contains $(git rev-parse HEAD)
+            exit 1
+          fi
+          echo "✅ Tag is from main branch"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
