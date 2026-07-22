@@ -87,33 +87,67 @@ export class NextApiBridgeClient {
   }
 
   /**
-   * Gets the client's full URL from headers.
+   * Gets the public client URL from proxy-owned request headers.
+   *
+   * A client_url cookie is intentionally not trusted here. Cookies are supplied
+   * by the caller and can be stale or forged on the first request before a proxy
+   * response has a chance to replace them.
    */
-  private async getClientHost(cookieStore: Awaited<ReturnType<typeof cookies>>): Promise<string> {
+  private async getClientHost(): Promise<string> {
     const headersList = await headers();
+    const forwardedHost = this.firstHeaderValue(headersList.get('x-forwarded-host'));
+    const forwardedHeaderHost = this.getForwardedHeaderHost(headersList.get('forwarded'));
+    const host = forwardedHost ?? forwardedHeaderHost ?? this.firstHeaderValue(headersList.get('host'));
 
-    const clientUrlCookie = cookieStore.get('client_url')?.value;
-    if (clientUrlCookie) {
-      log(`🔍 [Client URL] Detected from middleware cookie: ${clientUrlCookie}`, undefined, true);
-      return clientUrlCookie;
-    }
-
-    const host = headersList.get('host');
     if (!host) {
-      throw new Error('No host header found in request');
+      throw new Error('No trusted host header found in request');
     }
 
-    const forwardedProto = headersList.get('x-forwarded-proto');
-    let protocol = 'http';
-    if (forwardedProto && ['http', 'https'].includes(forwardedProto)) {
-      protocol = forwardedProto;
-    } else {
-      protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-    }
+    const normalizedHost = this.normalizeHost(host);
+    const forwardedProto = this.firstHeaderValue(headersList.get('x-forwarded-proto'));
+    const protocol = forwardedProto && ['http', 'https'].includes(forwardedProto.toLowerCase())
+      ? forwardedProto.toLowerCase()
+      : process.env.NODE_ENV === 'production'
+        ? 'https'
+        : 'http';
 
-    const fullUrl = `${protocol}://${host}`;
-    log(`🔍 [Client URL] Detected from headers: ${fullUrl}`, undefined, true);
+    const fullUrl = `${protocol}://${normalizedHost}`;
+    log(`🔍 [Client URL] Detected from proxy headers: ${fullUrl}`, undefined, true);
     return fullUrl;
+  }
+
+  private firstHeaderValue(value: string | null): string | null {
+    if (!value) return null;
+    return value.split(',')[0]?.trim() || null;
+  }
+
+  private getForwardedHeaderHost(value: string | null): string | null {
+    const firstValue = this.firstHeaderValue(value);
+    if (!firstValue) return null;
+
+    for (const part of firstValue.split(';')) {
+      const [rawKey, ...rawValueParts] = part.split('=');
+      if (rawKey?.trim().toLowerCase() !== 'host') continue;
+
+      return rawValueParts.join('=').trim().replace(/^["']|["']$/g, '') || null;
+    }
+
+    return null;
+  }
+
+  private normalizeHost(value: string): string {
+    const candidate = value.trim().replace(/^["']|["']$/g, '');
+
+    if (!candidate || candidate.includes('://') || /[\\/?#\s]/u.test(candidate)) {
+      throw new Error('Invalid host header in request');
+    }
+
+    const parsed = new URL(`http://${candidate}`);
+    if (!parsed.host || parsed.username || parsed.password) {
+      throw new Error('Invalid host header in request');
+    }
+
+    return parsed.host.toLowerCase().replace(/\.$/u, '');
   }
 
   /**
@@ -150,24 +184,24 @@ export class NextApiBridgeClient {
     }
 
     const allCookies = cookieStore.getAll();
-    const headers: Record<string, string> = {
+    const requestHeaders: Record<string, string> = {
       'Cache-Control': cache,
     };
 
-    const clientUrl = await this.getClientHost(cookieStore);
-    headers['x-client-url'] = clientUrl;
+    const clientUrl = await this.getClientHost();
+    requestHeaders['x-client-url'] = clientUrl;
 
     const cookieHeader = buildBackendCookieHeader(allCookies, this.options.cookiePrefix);
     if (cookieHeader) {
-      headers['Cookie'] = cookieHeader;
+      requestHeaders['Cookie'] = cookieHeader;
     }
 
     if (!isMultipart && method !== 'GET') {
-      headers['Content-Type'] = 'application/json';
+      requestHeaders['Content-Type'] = 'application/json';
     }
 
     if (this.options.apiKey && this.options.apiKeyHeader) {
-      headers[this.options.apiKeyHeader] = this.options.apiKey;
+      requestHeaders[this.options.apiKeyHeader] = this.options.apiKey;
     }
 
     // Bearer token authentication
@@ -176,14 +210,14 @@ export class NextApiBridgeClient {
       if (token) {
         const header = this.options.auth.header ?? 'Authorization';
         const prefix = this.options.auth.prefix ?? 'Bearer';
-        headers[header] = `${prefix} ${token}`;
+        requestHeaders[header] = `${prefix} ${token}`;
       }
     }
 
     const fetchOptions: RequestInit = {
       method,
       cache: 'no-store',
-      headers,
+      headers: requestHeaders,
       body: method === 'GET' ? undefined : isMultipart ? body : JSON.stringify(body ?? {}),
       credentials: 'include',
     };
@@ -276,7 +310,6 @@ export class NextApiBridgeClient {
         path: options?.path,
         domain: options?.domain,
       });
-
       cookieStore.delete(name);
       log(`Set cookie: ${prefixedName} (backend: ${name})`, undefined, true);
     } catch (error: any) {
