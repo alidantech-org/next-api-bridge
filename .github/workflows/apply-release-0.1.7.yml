@@ -34,6 +34,16 @@ jobs:
           cat .release/0.1.7/part-* | base64 --decode > /tmp/next-api-bridge-0.1.7.tar.gz
           echo 'badc9bacc5df00ba4c950da58ae8bb93e25bac6e864edd33b34b43b410c3ba1d  /tmp/next-api-bridge-0.1.7.tar.gz' | sha256sum --check
           tar -xzf /tmp/next-api-bridge-0.1.7.tar.gz -C .
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/e2e/run.mjs')
+          text = path.read_text()
+          text = text.replace(
+              "    '@playwright/test',\n",
+              "    '@playwright/test',\n    'typescript',\n    '@types/react',\n    '@types/react-dom',\n",
+          )
+          path.write_text(text)
+          PY
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -94,6 +104,16 @@ jobs:
           cat .release/0.1.7/part-* | base64 --decode > /tmp/next-api-bridge-0.1.7.tar.gz
           echo 'badc9bacc5df00ba4c950da58ae8bb93e25bac6e864edd33b34b43b410c3ba1d  /tmp/next-api-bridge-0.1.7.tar.gz' | sha256sum --check
           tar -xzf /tmp/next-api-bridge-0.1.7.tar.gz -C .
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/e2e/run.mjs')
+          text = path.read_text()
+          text = text.replace(
+              "    '@playwright/test',\n",
+              "    '@playwright/test',\n    'typescript',\n    '@types/react',\n    '@types/react-dom',\n",
+          )
+          path.write_text(text)
+          PY
           rm -rf .release
           rm -f .github/workflows/apply-release-0.1.7.yml
 
