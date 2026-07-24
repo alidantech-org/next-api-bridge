@@ -26,6 +26,7 @@ jobs:
         with:
           ref: chatgpt/release-0.1.7
           fetch-depth: 0
+          show-progress: false
 
       - name: Restore validated release workspace
         shell: bash
@@ -50,10 +51,29 @@ jobs:
         run: npm run test:matrix
 
       - name: Run packed production Next.js E2E
-        run: npm run test:e2e
+        id: e2e
+        shell: bash
+        run: |
+          set +e
+          npm run test:e2e > /tmp/e2e-node-${{ matrix.node }}-next-${{ matrix.next }}.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "E2E failed; uploading full diagnostic log"
+            exit "$status"
+          fi
         env:
           CI: 'true'
           NEXT_E2E_VERSION: ${{ matrix.next }}
+
+      - name: Upload E2E diagnostics
+        if: failure() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-node-${{ matrix.node }}-next-${{ matrix.next }}
+          path: /tmp/e2e-node-${{ matrix.node }}-next-${{ matrix.next }}.log
+          if-no-files-found: error
+          retention-days: 3
 
   apply:
     name: Apply clean 0.1.7 workspace
@@ -66,6 +86,7 @@ jobs:
         with:
           ref: chatgpt/release-0.1.7
           fetch-depth: 0
+          show-progress: false
 
       - name: Restore verified release workspace
         shell: bash
