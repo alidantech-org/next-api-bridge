@@ -40,7 +40,7 @@ jobs:
           text = path.read_text()
           text = text.replace(
               "    '@playwright/test',\n",
-              "    '@playwright/test',\n    'typescript',\n    '@types/react',\n    '@types/react-dom',\n",
+              "    '@playwright/test',\n    'typescript@5.8.2',\n    '@types/react@19',\n    '@types/react-dom@19',\n",
           )
           path.write_text(text)
           PY
@@ -110,7 +110,7 @@ jobs:
           text = path.read_text()
           text = text.replace(
               "    '@playwright/test',\n",
-              "    '@playwright/test',\n    'typescript',\n    '@types/react',\n    '@types/react-dom',\n",
+              "    '@playwright/test',\n    'typescript@5.8.2',\n    '@types/react@19',\n    '@types/react-dom@19',\n",
           )
           path.write_text(text)
           PY
