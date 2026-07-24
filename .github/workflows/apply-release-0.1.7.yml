@@ -1,18 +1,25 @@
-name: Apply 0.1.7 release preparation
+name: Verify and apply 0.1.7 release preparation
 
 on:
-  push:
+  pull_request:
     branches:
-      - chatgpt/release-0.1.7
-    paths:
-      - '.github/workflows/apply-release-0.1.7.yml'
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
-  apply:
+  verify:
+    name: Verify Node ${{ matrix.node }} / Next ${{ matrix.next }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+        next: [15, 16]
+
     steps:
       - name: Checkout release branch
         uses: actions/checkout@v4
@@ -26,16 +33,58 @@ jobs:
           cat .release/0.1.7/part-* | base64 --decode > /tmp/next-api-bridge-0.1.7.tar.gz
           echo 'badc9bacc5df00ba4c950da58ae8bb93e25bac6e864edd33b34b43b410c3ba1d  /tmp/next-api-bridge-0.1.7.tar.gz' | sha256sum --check
           tar -xzf /tmp/next-api-bridge-0.1.7.tar.gz -C .
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install package dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Select Next.js test major
+        run: npm install --no-save --no-audit --no-fund next@${{ matrix.next }}
+
+      - name: Run strict release gates
+        run: npm run test:matrix
+
+      - name: Run packed production Next.js E2E
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+          NEXT_E2E_VERSION: ${{ matrix.next }}
+
+  apply:
+    name: Apply clean 0.1.7 workspace
+    needs: verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          ref: chatgpt/release-0.1.7
+          fetch-depth: 0
+
+      - name: Restore verified release workspace
+        shell: bash
+        run: |
+          cat .release/0.1.7/part-* | base64 --decode > /tmp/next-api-bridge-0.1.7.tar.gz
+          echo 'badc9bacc5df00ba4c950da58ae8bb93e25bac6e864edd33b34b43b410c3ba1d  /tmp/next-api-bridge-0.1.7.tar.gz' | sha256sum --check
+          tar -xzf /tmp/next-api-bridge-0.1.7.tar.gz -C .
           rm -rf .release
           rm -f .github/workflows/apply-release-0.1.7.yml
 
-      - name: Generate synchronized package lock
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
-      - name: Commit release implementation
+      - name: Generate synchronized package lock
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Commit verified release implementation
         shell: bash
         run: |
           git config user.name 'chatgpt-release-bot'
