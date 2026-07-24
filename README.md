@@ -178,6 +178,9 @@ All methods return:
 // Query params
 api.get('/events', { query: { page: 1, search: 'conf' } });
 
+// Optional query values are omitted instead of being sent as "undefined" or "null"
+api.get('/events', { query: { page: undefined, search: null, active: false } });
+
 // Path params
 api.get('/events', { params: ['event-id'] });
 

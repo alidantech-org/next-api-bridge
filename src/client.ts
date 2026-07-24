@@ -6,6 +6,7 @@ import { buildBackendCookieHeader } from './cookies/build-cookie-header';
 import { syncResponseCookies } from './cookies/sync-response-cookies';
 import { log, shouldLog } from './logger/logger';
 import { colors } from './logger/colors';
+import { serializeQuery } from './query';
 
 /**
  * Normalized options with defaults applied.
@@ -136,17 +137,10 @@ export class NextApiBridgeClient {
     }
 
     if (query && Object.keys(query).length) {
-      const queryPairs = Object.entries(query)
-        .filter(([key]) => !EXCLUDED_QUERY_PARAMS.includes(key as any))
-        .map(([key, value]) => {
-          const stringValue = String(value);
-          if (stringValue.includes(',')) {
-            return `${key}=${stringValue}`;
-          }
-          return `${key}=${encodeURIComponent(stringValue)}`;
-        });
-      const queryString = queryPairs.join('&');
-      url += `?${queryString}`;
+      const queryString = serializeQuery(query, EXCLUDED_QUERY_PARAMS);
+      if (queryString) {
+        url += `?${queryString}`;
+      }
     }
 
     const allCookies = cookieStore.getAll();

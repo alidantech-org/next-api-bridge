@@ -1,6 +1,6 @@
 {
   "name": "next-api-bridge",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Cookie-aware API bridge for Next.js App Router with Server Actions. Handles auth, cookies, and session flow entirely on the server for external backends.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -16,6 +16,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
@@ -64,6 +65,11 @@
       "types": "./dist/cache.d.ts",
       "import": "./dist/cache.js",
       "require": "./dist/cache.cjs"
+    },
+    "./query": {
+      "types": "./dist/query.d.ts",
+      "import": "./dist/query.js",
+      "require": "./dist/query.cjs"
     }
   },
   "peerDependencies": {
