@@ -6,9 +6,18 @@ export { serializeQuery } from './query';
 
 export type {
   ApiBridgeOptions,
-  RequestOptions,
   ApiBridgeResponse,
-  FormActionResponse,
-  CookieOptions,
   BearerAuthConfig,
-} from './types/index';
+  BridgeLogger,
+  CookieOptions,
+  CookiePolicyOptions,
+  CookieSyncInfo,
+  CookieSyncReason,
+  FormActionResponse,
+  ForwardableRequestHeader,
+  NextCacheOptions,
+  RequestContextOptions,
+  RequestOptions,
+  SafeLogEntry,
+  TrustProxyConfig,
+} from './types';
