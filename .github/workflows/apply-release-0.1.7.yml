@@ -36,13 +36,20 @@ jobs:
           tar -xzf /tmp/next-api-bridge-0.1.7.tar.gz -C .
           python - <<'PY'
           from pathlib import Path
-          path = Path('tests/e2e/run.mjs')
-          text = path.read_text()
-          text = text.replace(
+
+          runner = Path('tests/e2e/run.mjs')
+          runner_text = runner.read_text().replace(
               "    '@playwright/test',\n",
               "    '@playwright/test',\n    'typescript@5.8.2',\n    '@types/react@19',\n    '@types/react-dom@19',\n",
           )
-          path.write_text(text)
+          runner.write_text(runner_text)
+
+          spec = Path('tests/fixtures/next-app/tests/bridge.spec.mjs')
+          spec_text = spec.read_text().replace(
+              "  expect(serialized).not.toContain('authorization');\n  expect(serialized).not.toContain('cookie');\n  expect(serialized).not.toContain('set-cookie');\n",
+              "  expect(result.headers).not.toHaveProperty('authorization');\n  expect(result.headers).not.toHaveProperty('cookie');\n  expect(result.headers).not.toHaveProperty('set-cookie');\n  expect(serialized).not.toContain('login-session');\n  expect(serialized).not.toContain('rotated-session');\n",
+          )
+          spec.write_text(spec_text)
           PY
 
       - name: Setup Node.js
@@ -106,13 +113,20 @@ jobs:
           tar -xzf /tmp/next-api-bridge-0.1.7.tar.gz -C .
           python - <<'PY'
           from pathlib import Path
-          path = Path('tests/e2e/run.mjs')
-          text = path.read_text()
-          text = text.replace(
+
+          runner = Path('tests/e2e/run.mjs')
+          runner_text = runner.read_text().replace(
               "    '@playwright/test',\n",
               "    '@playwright/test',\n    'typescript@5.8.2',\n    '@types/react@19',\n    '@types/react-dom@19',\n",
           )
-          path.write_text(text)
+          runner.write_text(runner_text)
+
+          spec = Path('tests/fixtures/next-app/tests/bridge.spec.mjs')
+          spec_text = spec.read_text().replace(
+              "  expect(serialized).not.toContain('authorization');\n  expect(serialized).not.toContain('cookie');\n  expect(serialized).not.toContain('set-cookie');\n",
+              "  expect(result.headers).not.toHaveProperty('authorization');\n  expect(result.headers).not.toHaveProperty('cookie');\n  expect(result.headers).not.toHaveProperty('set-cookie');\n  expect(serialized).not.toContain('login-session');\n  expect(serialized).not.toContain('rotated-session');\n",
+          )
+          spec.write_text(spec_text)
           PY
           rm -rf .release
           rm -f .github/workflows/apply-release-0.1.7.yml
