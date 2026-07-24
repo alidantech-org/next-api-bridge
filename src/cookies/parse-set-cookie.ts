@@ -1,99 +1,67 @@
 import type { ParsedCookie } from '../types';
 
-/**
- * Parses a Set-Cookie header string into an array of cookie objects.
- * Handles multiple cookies separated by commas with proper parsing.
- */
-export function parseSetCookieHeader(setCookieHeader: string): ParsedCookie[] {
+const COOKIE_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+
+export function splitSetCookieHeader(header: string): string[] {
+  return header
+    .split(/,(?=\s*[^;,\s]+=)/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+export function parseSetCookieHeader(header: string): ParsedCookie[] {
   const cookies: ParsedCookie[] = [];
-
-  // Split by comma, but be careful - cookie values can contain commas
-  // We'll split on ", " (comma followed by space) which is the standard separator
-  // and check if the next part looks like a cookie name (contains "=" before any ";")
-  let currentCookie = '';
-  const parts = setCookieHeader.split(', ');
-
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    // Check if this part starts a new cookie (has "=" before ";")
-    const equalsIndex = part.indexOf('=');
-    const semicolonIndex = part.indexOf(';');
-
-    if (equalsIndex !== -1 && (semicolonIndex === -1 || equalsIndex < semicolonIndex)) {
-      // This is a new cookie
-      if (currentCookie) {
-        parseCookieString(currentCookie, cookies);
-      }
-      currentCookie = part;
-    } else {
-      // This is a continuation of the current cookie
-      currentCookie += ', ' + part;
+  for (const value of splitSetCookieHeader(header)) {
+    try {
+      cookies.push(parseSetCookieString(value));
+    } catch {
+      // Invalid cookies are reported by the synchronization result.
     }
   }
-
-  // Parse the last cookie
-  if (currentCookie) {
-    parseCookieString(currentCookie, cookies);
-  }
-
   return cookies;
 }
 
-/**
- * Parses a single cookie string into a cookie object.
- */
 export function parseSetCookieString(cookieString: string): ParsedCookie {
-  const parts = cookieString.split(';').map((p) => p.trim());
-  const [nameValue] = parts;
-  const equalsIndex = nameValue.indexOf('=');
+  const parts = cookieString.split(';').map((part) => part.trim());
+  const first = parts.shift();
+  if (!first) throw new Error('Invalid Set-Cookie header');
+  const equalsIndex = first.indexOf('=');
+  if (equalsIndex <= 0) throw new Error('Invalid Set-Cookie name/value');
 
-  if (equalsIndex === -1) {
-    throw new Error('Invalid cookie string: no equals sign found');
+  const name = first.slice(0, equalsIndex).trim();
+  const value = first.slice(equalsIndex + 1).trim();
+  if (!COOKIE_NAME_PATTERN.test(name) || /[\r\n]/.test(value)) {
+    throw new Error('Invalid Set-Cookie value');
   }
-
-  const name = nameValue.substring(0, equalsIndex).trim();
-  const value = nameValue.substring(equalsIndex + 1).trim();
 
   const cookie: ParsedCookie = { name, value };
 
-  for (let i = 1; i < parts.length; i++) {
-    const part = parts[i].toLowerCase();
-    if (part === 'httponly') {
-      cookie.httpOnly = true;
-    } else if (part === 'secure') {
-      cookie.secure = true;
-    } else if (part.startsWith('samesite=')) {
-      cookie.sameSite = part.split('=')[1];
-    } else if (part.startsWith('max-age=')) {
-      const maxAge = parseInt(part.split('=')[1], 10);
-      if (!isNaN(maxAge)) {
-        cookie.maxAge = maxAge;
-      }
-    } else if (part.startsWith('expires=')) {
-      const expiresValue = parts[i].substring(8); // Get value after "expires=" (case-sensitive)
-      try {
-        cookie.expires = new Date(expiresValue);
-      } catch (e) {
-        // Invalid date format, ignore
-      }
-    } else if (part.startsWith('path=')) {
-      cookie.path = part.split('=')[1];
-    } else if (part.startsWith('domain=')) {
-      cookie.domain = part.split('=')[1];
+  for (const rawPart of parts) {
+    const separator = rawPart.indexOf('=');
+    const rawName = separator === -1 ? rawPart : rawPart.slice(0, separator);
+    const rawValue = separator === -1 ? '' : rawPart.slice(separator + 1);
+    const attribute = rawName.trim().toLowerCase();
+    const attributeValue = rawValue.trim();
+
+    if (attribute === 'httponly') cookie.httpOnly = true;
+    else if (attribute === 'secure') cookie.secure = true;
+    else if (attribute === 'partitioned') cookie.partitioned = true;
+    else if (attribute === 'samesite') {
+      const valueLower = attributeValue.toLowerCase();
+      if (valueLower === 'strict' || valueLower === 'lax' || valueLower === 'none') cookie.sameSite = valueLower;
+    } else if (attribute === 'max-age') {
+      const valueNumber = Number.parseInt(attributeValue, 10);
+      if (Number.isFinite(valueNumber)) cookie.maxAge = valueNumber;
+    } else if (attribute === 'expires') {
+      const date = new Date(attributeValue);
+      if (!Number.isNaN(date.getTime())) cookie.expires = date;
+    } else if (attribute === 'path') cookie.path = attributeValue;
+    else if (attribute === 'domain') cookie.domain = attributeValue;
+    else if (attribute === 'priority') {
+      const priority = attributeValue.toLowerCase();
+      if (priority === 'low' || priority === 'medium' || priority === 'high') cookie.priority = priority;
     }
   }
 
   return cookie;
-}
-
-/**
- * Internal helper to parse cookie string and push to array.
- */
-function parseCookieString(cookieString: string, cookies: ParsedCookie[]): void {
-  try {
-    const cookie = parseSetCookieString(cookieString);
-    cookies.push(cookie);
-  } catch (e) {
-    // Skip invalid cookies
-  }
 }
