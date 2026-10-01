@@ -5,7 +5,10 @@ export interface TerminalColors {
   red(value: string): string;
   green(value: string): string;
   yellow(value: string): string;
+  blue(value: string): string;
+  magenta(value: string): string;
   cyan(value: string): string;
+  gray(value: string): string;
 }
 
 export function shouldUseColor(mode: BridgeLogColor): boolean {
@@ -27,6 +30,9 @@ export function createTerminalColors(enabled: boolean): TerminalColors {
     red: (value) => paint(enabled, 31, value),
     green: (value) => paint(enabled, 32, value),
     yellow: (value) => paint(enabled, 33, value),
+    blue: (value) => paint(enabled, 34, value),
+    magenta: (value) => paint(enabled, 35, value),
     cyan: (value) => paint(enabled, 36, value),
+    gray: (value) => paint(enabled, 90, value),
   };
 }
