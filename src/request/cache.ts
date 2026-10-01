@@ -124,7 +124,7 @@ export function validateCacheOptions(options: RequestOptions): void {
   if (revalidate !== undefined) validateRevalidate(revalidate, 'next');
   validateTags(options.next?.tags, 'next');
 
-  if (options.caching && options.caching !== false) {
+  if (options.caching !== undefined && options.caching !== false) {
     normalizePolicy(options.caching, 'request caching');
   }
 }
