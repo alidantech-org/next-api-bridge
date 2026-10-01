@@ -133,7 +133,41 @@ jobs:
       - run: npm install --no-save next@${{ matrix.next }}
       - run: npm run test:matrix
 
-      - name: Run packed production E2E
+  e2e:
+    name: E2E Node ${{ matrix.node }} / Next ${{ matrix.next }}
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: 20
+            next: 15
+          - node: 22
+            next: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Verify immutable release commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "${{ needs.release.outputs.sha }}"
+          git branch -r --contains HEAD | grep -q 'origin/main'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run packed production Next.js E2E
         run: npm run test:e2e
         env:
           NEXT_E2E_VERSION: ${{ matrix.next }}
@@ -144,6 +178,7 @@ jobs:
     needs:
       - release
       - verify
+      - e2e
     runs-on: ubuntu-latest
     environment: publish
     permissions:
