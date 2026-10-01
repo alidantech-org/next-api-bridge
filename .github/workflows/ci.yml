@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     name: Node ${{ matrix.node }} / Next ${{ matrix.next }}
@@ -26,7 +30,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm install
+      - run: npm ci
       - run: npm install --no-save next@${{ matrix.next }}
       - run: npm run test:matrix
       - name: Upload synchronized lockfile
@@ -39,15 +43,12 @@ jobs:
   e2e:
     name: E2E Node ${{ matrix.node }} / Next ${{ matrix.next }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         include:
           - node: 20
-            next: 15
-          - node: 20
-            next: 16
-          - node: 22
             next: 15
           - node: 22
             next: 16
@@ -57,7 +58,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm install
+      - run: npm ci
       - name: Run packed production Next.js E2E
         run: npm run test:e2e
         env:

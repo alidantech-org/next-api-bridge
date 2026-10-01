@@ -69,7 +69,7 @@ try {
     '@types/react-dom@19',
   ], { cwd: fixture });
 
-  run(npx, ['playwright', 'install', ...(process.env.CI ? ['--with-deps'] : []), 'chromium'], { cwd: fixture });
+  run(npx, ['playwright', 'install', 'chromium'], { cwd: fixture });
 
   backend = spawn(process.execPath, [backendFile], { cwd: root, env, stdio: 'inherit' });
   await waitFor('http://127.0.0.1:4100/v1/empty');

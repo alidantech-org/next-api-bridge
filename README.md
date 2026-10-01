@@ -529,7 +529,7 @@ npm run test:e2e
 
 The E2E suite packs the package, installs the tarball into a real App Router fixture, runs a production `next build` and `next start`, starts a controllable backend, and executes Playwright tests. Publishing must not proceed until these gates pass.
 
-Releases are started manually from the **Publish to npm** workflow on `main`. The workflow reads the version from `package.json`, requires `package-lock.json` to match, creates the immutable `vX.Y.Z` tag automatically, verifies that the tagged commit belongs to `main`, runs the full Node/Next matrix, and only then publishes through npm Trusted Publishing. Pushes to `develop` never publish.
+Releases are started manually from the **Publish to npm** workflow on `main`. The workflow reads the version from `package.json`, requires `package-lock.json` to match, creates the immutable `vX.Y.Z` tag automatically, verifies that the tagged commit belongs to `main`, runs the full Node/Next matrix, publishes through npm Trusted Publishing, and finally verifies that the exact version can be read and packed from the public npm registry before the workflow is considered successful. Pushes to `develop` never publish.
 
 Direct `vX.Y.Z` tag pushes remain supported, but the tag must match the package version and point to a commit contained in `main`.
 

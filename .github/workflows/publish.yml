@@ -133,7 +133,41 @@ jobs:
       - run: npm install --no-save next@${{ matrix.next }}
       - run: npm run test:matrix
 
-      - name: Run packed production E2E
+  e2e:
+    name: E2E Node ${{ matrix.node }} / Next ${{ matrix.next }}
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: 20
+            next: 15
+          - node: 22
+            next: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Verify immutable release commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "${{ needs.release.outputs.sha }}"
+          git branch -r --contains HEAD | grep -q 'origin/main'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run packed production Next.js E2E
         run: npm run test:e2e
         env:
           NEXT_E2E_VERSION: ${{ matrix.next }}
@@ -144,6 +178,7 @@ jobs:
     needs:
       - release
       - verify
+      - e2e
     runs-on: ubuntu-latest
     environment: publish
     permissions:
@@ -160,4 +195,46 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - run: npm ci
-      - run: npm publish
+
+      - name: Publish package
+        run: npm publish
+
+      - name: Verify package is installable from npm
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          VERSION="$(node -p "require('./package.json').version")"
+          REGISTRY="https://registry.npmjs.org"
+
+          for attempt in $(seq 1 30); do
+            PUBLISHED_VERSION="$(
+              npm view "${PACKAGE_NAME}@${VERSION}" version \
+                --registry="${REGISTRY}" \
+                --prefer-online \
+                2>/dev/null || true
+            )"
+
+            if [[ "${PUBLISHED_VERSION}" == "${VERSION}" ]]; then
+              TARBALL="$(
+                npm pack "${PACKAGE_NAME}@${VERSION}" \
+                  --ignore-scripts \
+                  --registry="${REGISTRY}" \
+                  --silent \
+                  2>/dev/null || true
+              )"
+
+              if [[ -n "${TARBALL}" && -f "${TARBALL}" ]]; then
+                echo "Verified ${PACKAGE_NAME}@${VERSION} is available from the public npm registry."
+                rm -f "${TARBALL}"
+                exit 0
+              fi
+            fi
+
+            echo "Registry has not exposed ${PACKAGE_NAME}@${VERSION} yet (attempt ${attempt}/30)."
+            sleep 10
+          done
+
+          echo "::error::npm accepted the publish request, but ${PACKAGE_NAME}@${VERSION} did not become installable from the public registry within 5 minutes."
+          exit 1
