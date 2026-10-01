@@ -24,11 +24,9 @@ function resolveRequestId(incoming: Headers, options: NormalizedRequestContextOp
 }
 
 function isSecureRequest(headers: Headers): boolean {
-  const proto = headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
-  if (proto === 'https') return true;
-  if (proto === 'http') return false;
-  const origin = headers.get('origin');
-  return origin?.startsWith('https://') ?? process.env.NODE_ENV === 'production';
+  const origin = deriveClientOrigin(headers);
+  if (origin) return origin.startsWith('https://');
+  return process.env.NODE_ENV === 'production';
 }
 
 export function buildRequestContextHeaders(
@@ -57,10 +55,11 @@ export function buildRequestContextHeaders(
   }
 
   if (options.clientOrigin.enabled) {
+    const derivedCandidate = deriveClientOrigin(incoming);
     const cookieCandidate = options.clientOrigin.cookieName
       ? cookieStore.get(options.clientOrigin.cookieName)?.value
       : undefined;
-    const candidate = cookieCandidate ?? deriveClientOrigin(incoming);
+    const candidate = derivedCandidate ?? cookieCandidate;
     const origin = candidate ? validateClientOrigin(candidate, options.clientOrigin) : undefined;
     if (origin) outgoing[options.clientOrigin.outgoingHeader] = origin;
   }

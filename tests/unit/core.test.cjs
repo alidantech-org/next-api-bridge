@@ -102,6 +102,45 @@ test('client origin accepts only approved origin-only values', () => {
   assert.equal(testing.validateClientOrigin('https://evil.example.com', options), undefined);
 });
 
+test('client origin prefers proxy headers and supports standard Forwarded values', () => {
+  assert.equal(
+    testing.deriveClientOrigin(new Headers({
+      host: 'internal:3000',
+      'x-forwarded-host': 'public.example.com',
+      'x-forwarded-proto': 'https',
+    })),
+    'https://public.example.com',
+  );
+  assert.equal(
+    testing.deriveClientOrigin(new Headers({
+      host: 'internal:3000',
+      forwarded: 'for=203.0.113.10;proto=https;host="standard.example.com"',
+    })),
+    'https://standard.example.com',
+  );
+
+  const options = testing.validateAndNormalizeOptions({
+    baseUrl: 'https://api.example.com',
+    requestContext: {
+      clientOrigin: {
+        enabled: true,
+        allowedHosts: ['public.example.com', 'cookie.example.com'],
+        cookieName: 'client_url',
+      },
+    },
+  });
+  const result = testing.buildRequestContextHeaders(
+    new Headers({
+      host: 'internal:3000',
+      'x-forwarded-host': 'public.example.com',
+      'x-forwarded-proto': 'https',
+    }),
+    new MemoryCookies({ client_url: 'https://cookie.example.com' }),
+    options.requestContext,
+  );
+  assert.equal(result.headers['x-client-origin'], 'https://public.example.com');
+});
+
 test('IPv4, IPv6 and forwarded chains are validated', () => {
   assert.equal(testing.normalizeIp('203.0.113.10'), '203.0.113.10');
   assert.equal(testing.normalizeIp('[2001:db8::1]:443'), '2001:db8::1');

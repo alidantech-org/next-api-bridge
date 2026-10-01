@@ -7,6 +7,38 @@ function normalizeHost(host: string): string {
   return host.trim().toLowerCase().replace(/\.$/, '');
 }
 
+function firstHeaderValue(value: string | null): string | undefined {
+  return value?.split(',')[0]?.trim() || undefined;
+}
+
+function getForwardedParameter(value: string | null, parameter: 'host' | 'proto'): string | undefined {
+  const firstValue = firstHeaderValue(value);
+  if (!firstValue || /[\r\n]/.test(firstValue)) return undefined;
+
+  for (const part of firstValue.split(';')) {
+    const [rawKey, ...rawValueParts] = part.split('=');
+    if (rawKey?.trim().toLowerCase() !== parameter) continue;
+    const candidate = rawValueParts.join('=').trim().replace(/^["']|["']$/g, '');
+    return candidate && !/[\r\n]/.test(candidate) ? candidate : undefined;
+  }
+
+  return undefined;
+}
+
+function normalizeDerivedHost(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const candidate = value.trim().replace(/^["']|["']$/g, '');
+  if (!candidate || candidate.includes('://') || /[\\/?#\s]/u.test(candidate)) return undefined;
+
+  try {
+    const parsed = new URL(`http://${candidate}`);
+    if (!parsed.host || parsed.username || parsed.password) return undefined;
+    return parsed.host.toLowerCase().replace(/\.$/u, '');
+  } catch {
+    return undefined;
+  }
+}
+
 export function validateClientOrigin(
   value: string,
   options: ClientOriginValidationOptions,
@@ -38,20 +70,32 @@ export function validateClientOrigin(
 }
 
 export function deriveClientOrigin(headers: Headers): string | undefined {
+  const forwardedHost = normalizeDerivedHost(firstHeaderValue(headers.get('x-forwarded-host')));
+  const standardForwardedHost = normalizeDerivedHost(getForwardedParameter(headers.get('forwarded'), 'host'));
+  const directHost = normalizeDerivedHost(firstHeaderValue(headers.get('host')));
+  const host = forwardedHost ?? standardForwardedHost ?? directHost;
+
+  if (host) {
+    const forwardedProto = firstHeaderValue(headers.get('x-forwarded-proto'))?.toLowerCase();
+    const standardForwardedProto = getForwardedParameter(headers.get('forwarded'), 'proto')?.toLowerCase();
+    const protocolCandidate = forwardedProto ?? standardForwardedProto;
+    const protocol = protocolCandidate === 'http' || protocolCandidate === 'https'
+      ? protocolCandidate
+      : /^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host) ? 'http' : 'https';
+    return `${protocol}://${host}`;
+  }
+
   const directOrigin = headers.get('origin');
   if (directOrigin && !/[\r\n]/.test(directOrigin)) {
     try {
       const parsed = new URL(directOrigin);
-      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password) return parsed.origin;
+      if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username && !parsed.password) {
+        return parsed.origin;
+      }
     } catch {
-      // Continue with trusted host/proto headers.
+      return undefined;
     }
   }
-  const host = (headers.get('x-forwarded-host') ?? headers.get('host'))?.split(',')[0]?.trim();
-  if (!host || /[\r\n/]/.test(host)) return undefined;
-  const forwardedProto = headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
-  const protocol = forwardedProto === 'http' || forwardedProto === 'https'
-    ? forwardedProto
-    : /^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host) ? 'http' : 'https';
-  return `${protocol}://${host}`;
+
+  return undefined;
 }
