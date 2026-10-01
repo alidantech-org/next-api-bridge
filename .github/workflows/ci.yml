@@ -4,8 +4,9 @@ on:
   push:
     branches:
       - main
-      - 'chatgpt/**'
   pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
