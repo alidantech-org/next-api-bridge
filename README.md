@@ -135,7 +135,7 @@ Request context is enabled by default. The bridge safely forwards:
 It also sends:
 
 ```text
-x-api-bridge: next-api-bridge/0.1.9
+x-api-bridge: next-api-bridge/0.1.10
 ```
 
 A request ID is preserved from `x-request-id` or generated when absent. `baggage` is supported but must be explicitly enabled.
@@ -655,7 +655,7 @@ Releases are started manually from the **Publish to npm** workflow on `main`. Th
 `RELEASE_NOTES.md` is intentionally the draft for only the current release. Its first line is the GitHub Release title and must begin with the current version, for example:
 
 ```md
-# v0.1.9 — Short release title
+# v0.1.10 — Short release title
 
 - First release note.
 - Second release note.
