@@ -135,7 +135,7 @@ Request context is enabled by default. The bridge safely forwards:
 It also sends:
 
 ```text
-x-api-bridge: next-api-bridge/0.1.7
+x-api-bridge: next-api-bridge/0.1.8
 ```
 
 A request ID is preserved from `x-request-id` or generated when absent. `baggage` is supported but must be explicitly enabled.
@@ -336,34 +336,37 @@ A context-free public/static client is intentionally deferred to 0.2.
 
 ## Logging
 
-Logging is compact by default and expands only when explicitly requested.
+Logging is compact by default and uses a distinct bridge identity that sits cleanly beside Next.js output without copying Next.js formatting.
 
-In development, successful backend calls use one aligned terminal row:
+In development, successful backend calls use one compact line with the complete endpoint path:
 
 ```text
-API  POST     /auth/login                          201      42ms  842 B (128 B sent)
-API  GET      /auth/me                             200      18ms  1.4 KB
-API  POST     /orders                              422      36ms  311 B (2.8 KB sent)  Invalid ticket selection
-API  POST     /media                               201     812ms  206 B (8.2 MB+ multipart sent)  LARGE
+@API POST /auth/login 201 42ms 842 B (128 B sent)
+@API GET /auth/me 200 18ms 1.4 KB
+@API PATCH /events/01a0ecee-8967-7eb1-91a0-5e45014dc35b 200 36ms 646 B (19 B sent)
+@API POST /orders 422 36ms 311 B (2.8 KB sent) — Invalid ticket selection
 ```
+
+Pretty logs never truncate the endpoint and never print request IDs. Request IDs remain available to JSON and custom structured loggers.
 
 JSON is the common case and is intentionally not labelled. Non-JSON payloads are labelled only when the type adds useful information, such as `multipart`, `csv`, `pdf`, `text`, or an image MIME type.
 
-The size column is always response-first. A request body appears in parentheses:
+Response size is shown directly. Request size is the only size wrapped in parentheses:
 
 ```text
-5 KB (3 KB sent)
+@API POST /orders 201 42ms 842 B (128 B sent)
+@API POST /media 201 812ms 206 B (8.2 MB+ multipart sent)
 ```
 
-Multipart sizes end in `+` because the bridge reports the known field/file payload bytes without buffering the encoded multipart body merely to calculate boundary overhead.
+Multipart sizes end in `+` because the bridge reports known field/file payload bytes without buffering the encoded multipart body merely to calculate boundary overhead.
+
+Terminal colors are selective and enabled automatically only for an interactive TTY. `@API` has its own accent, HTTP methods are differentiated, paths and ordinary timing stay subdued, status classes are colored by severity, and slow/large values are highlighted without adding noisy `SLOW` or `LARGE` words. `NO_COLOR`, non-TTY output, JSON logs, and custom structured loggers remain ANSI-free.
 
 The default logging level is:
 
 - `info` in development
 - `warn` outside development
 - `silent` when `NODE_ENV=test`
-
-Terminal colors are selective and enabled automatically only for an interactive TTY. Statuses, slow requests, large payloads, and errors are highlighted; files, JSON logs, `NO_COLOR`, and non-TTY output stay free of ANSI escape codes.
 
 ### Configuration
 
@@ -403,8 +406,6 @@ Levels are `silent | error | warn | info | debug | trace`.
 
 Normal `info` logging emits one completed-request row. It does not emit separate request/response lines, repeated success messages, client-origin discovery messages, or raw cookie activity.
 
-At `debug`, operation names are added when available. At `trace`, request IDs and the sanitized full backend URL are available in structured entries.
-
 ### Request and response bodies
 
 Bodies remain off by default. Enable them independently as `summary` or `full`:
@@ -421,9 +422,37 @@ logging: {
 }
 ```
 
+Body details are rendered as a tree rooted directly below the `A` in `@API`. Objects with up to three top-level keys stay on one line when all values are simple scalars:
+
+```text
+@API PATCH /events/01a0ecee-8967-7eb1-91a0-5e45014dc35b 200 36ms 646 B (19 B sent)
+ └─ request body { status: 'paused' }
+```
+
+Larger or nested values expand automatically:
+
+```text
+@API POST /orders 201 42ms 842 B (1.2 KB sent)
+ └─ request body
+    {
+      quantity: 2,
+      type: 'adult',
+      addon: false,
+      customerId: 'customer-1'
+    }
+```
+
+When multiple details are enabled, the same compact tree is used:
+
+```text
+@API POST /orders 201 42ms 842 B (128 B sent)
+ ├─ request body { quantity: 2, type: 'adult' }
+ └─ response body { success: true, orderId: 'order-1' }
+```
+
 `summary` reports shape information such as object key count, array length, byte size, or multipart field/file counts.
 
-`full` passes the redacted value to Node's real object inspector rather than JSON-stringifying it. Inspection is bounded by `depth`, `maxArrayLength`, and `maxStringLength`, so nested or very large objects do not flood the terminal.
+`full` uses Node's real object inspector rather than JSON-stringifying values. Inspection remains bounded by `depth`, `maxArrayLength`, and `maxStringLength`.
 
 Sensitive values are redacted before formatting or before a custom logger receives the entry. Built-in protection includes authorization, cookies, `Set-Cookie`, passwords, API keys, secrets, access/refresh tokens, sessions, client secrets, and OTPs.
 
@@ -456,6 +485,8 @@ await api.post('/checkout', body, {
 });
 ```
 
+Pretty output remains compact even at `trace`; request IDs and sanitized backend URLs remain available in structured entries instead of being appended to terminal rows.
+
 ### Structured and file logging
 
 A custom logger receives redacted structured objects instead of preformatted strings:
@@ -481,26 +512,6 @@ const api = createNextApiBridge({
 ```
 
 This is the intended integration point for Pino, Winston, OpenTelemetry collectors, Datadog, or file logging. The bridge intentionally does not own file handles, rotation, retention, or serverless filesystem behavior.
-
-For a simple JSON-lines file logger:
-
-```ts
-import { createWriteStream } from 'node:fs';
-
-const stream = createWriteStream('./api-bridge.log', { flags: 'a' });
-
-const api = createNextApiBridge({
-  baseUrl: process.env.API_URL!,
-  logging: {
-    level: 'info',
-    logger: {
-      info: (entry) => stream.write(`${JSON.stringify(entry)}\n`),
-      warn: (entry) => stream.write(`${JSON.stringify(entry)}\n`),
-      error: (entry) => stream.write(`${JSON.stringify(entry)}\n`),
-    },
-  },
-});
-```
 
 The legacy top-level `logger` and `verbose` options remain supported for 0.1.x compatibility but are deprecated in favor of `logging`.
 

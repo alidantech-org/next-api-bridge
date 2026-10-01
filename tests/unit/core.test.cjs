@@ -272,7 +272,7 @@ test('request context forwards only configured safe values and generates IDs', (
   assert.equal(result.headers['x-client-ip'], '203.0.113.10');
   assert.equal(result.headers['x-client-origin'], 'https://app.example.com');
   assert.match(result.headers['x-request-id'], /^[0-9a-f-]{36}$/i);
-  assert.equal(result.headers['x-api-bridge'], 'next-api-bridge/0.1.7');
+  assert.equal(result.headers['x-api-bridge'], 'next-api-bridge/0.1.8');
 });
 
 
@@ -305,24 +305,28 @@ test('logging config supports compact safe defaults and bounded inspection', () 
   }), /non-negative integer/);
 });
 
-test('compact pretty logs keep JSON implicit and align one size column', () => {
+test('pretty logs use the @API identity without table padding or request IDs', () => {
   const options = testing.validateAndNormalizeOptions({
     baseUrl: 'https://api.example.com',
-    logging: { level: 'info', color: false },
+    logging: { level: 'trace', color: false },
   }).logging;
+  const longPath = '/events/01a0ecee-8967-7eb1-91a0-5e45014dc35b/tickets';
 
   const line = testing.formatPrettyLogLine({
     event: 'response',
     method: 'POST',
-    path: '/auth/login',
+    path: longPath,
     status: 201,
     durationMs: 42,
+    requestId: 'f634cf2c-4440-4e51-a1be-8e424e125e1d',
     request: { bodyBytes: 128, bodyType: 'json' },
     response: { bodyBytes: 842, bodyType: 'json' },
   }, options);
 
-  assert.match(line, /^API\s+POST\s+\/auth\/login\s+201\s+42ms\s+842 B \(128 B sent\)$/);
+  assert.equal(line, `@API POST ${longPath} 201 42ms 842 B (128 B sent)`);
   assert.doesNotMatch(line, /json/i);
+  assert.doesNotMatch(line, /id=/i);
+  assert.doesNotMatch(line, /\.\.\./);
 
   const multipart = testing.formatPrettyLogLine({
     event: 'response',
@@ -338,8 +342,106 @@ test('compact pretty logs keep JSON implicit and align one size column', () => {
     response: { bodyBytes: 206, bodyType: 'json' },
   }, options);
 
-  assert.match(multipart, /206 B \(8 MB\+ multipart sent\)/);
-  assert.match(multipart, /LARGE/);
+  assert.equal(multipart, '@API POST /media 201 812ms 206 B (8 MB+ multipart sent)');
+  assert.doesNotMatch(multipart, /LARGE|SLOW/);
+});
+
+test('pretty log colors give bridge output its own restrained identity', () => {
+  const options = testing.validateAndNormalizeOptions({
+    baseUrl: 'https://api.example.com',
+    logging: { level: 'info', color: true },
+  }).logging;
+
+  const line = testing.formatPrettyLogLine({
+    event: 'response',
+    method: 'GET',
+    path: '/events',
+    status: 200,
+    durationMs: 12,
+    response: { bodyBytes: 759, bodyType: 'json' },
+  }, options);
+
+  assert.match(line, /\x1b\[35m@API\x1b\[0m/);
+  assert.match(line, /\x1b\[36mGET\x1b\[0m/);
+  assert.match(line, /\x1b\[90m\/events\x1b\[0m/);
+  assert.match(line, /\x1b\[32m200\x1b\[0m/);
+});
+
+test('pretty body details stay inline for three simple keys and expand complex bodies', () => {
+  const compact = testing.validateAndNormalizeOptions({
+    baseUrl: 'https://api.example.com',
+    logging: {
+      level: 'debug',
+      color: false,
+      request: { body: 'full' },
+      response: { body: false },
+    },
+  }).logging;
+
+  const compactLines = testing.formatPrettyLogDetails({
+    event: 'response',
+    request: {
+      body: { quantity: 2, type: 'adult', addon: false },
+      bodyBytes: 44,
+      bodyType: 'json',
+    },
+  }, compact);
+
+  assert.deepEqual(compactLines, [
+    " └─ request body { quantity: 2, type: 'adult', addon: false }",
+  ]);
+
+  const expandedLines = testing.formatPrettyLogDetails({
+    event: 'response',
+    request: {
+      body: {
+        quantity: 2,
+        type: 'adult',
+        addon: false,
+        customerId: 'customer-1',
+      },
+      bodyBytes: 80,
+      bodyType: 'json',
+    },
+  }, compact);
+
+  assert.equal(expandedLines[0], ' └─ request body');
+  assert.equal(expandedLines[1], '    {');
+  assert.equal(expandedLines.at(-1), '    }');
+
+  const nestedLines = testing.formatPrettyLogDetails({
+    event: 'response',
+    request: {
+      body: { status: 'paused', metadata: { source: 'admin' } },
+      bodyType: 'json',
+    },
+  }, compact);
+
+  assert.equal(nestedLines[0], ' └─ request body');
+  assert.equal(nestedLines[1], '    {');
+});
+
+test('multiple pretty details use a tree rooted below the A in @API', () => {
+  const options = testing.validateAndNormalizeOptions({
+    baseUrl: 'https://api.example.com',
+    logging: {
+      level: 'debug',
+      color: false,
+      request: { body: 'full' },
+      response: { body: 'full' },
+    },
+  }).logging;
+
+  const lines = testing.formatPrettyLogDetails({
+    event: 'response',
+    request: { body: { status: 'paused' }, bodyType: 'json' },
+    response: { body: { success: true, updated: true }, bodyType: 'json' },
+  }, options);
+
+  assert.deepEqual(lines, [
+    " ├─ request body { status: 'paused' }",
+    ' └─ response body { success: true, updated: true }',
+  ]);
 });
 
 test('body metrics reuse serialized JSON and mark multipart size as approximate', () => {
