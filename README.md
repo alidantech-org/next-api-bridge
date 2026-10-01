@@ -353,8 +353,8 @@ This makes long-lived reference data and frequently changing entities easy to tr
 /reference/categories      cache 1h
 /reference/tags            cache 1h
 /events/:id                cache 30s
-/auth/me                   backend
-/orders                    backend
+/auth/me                   live
+/orders                    live
 ```
 
 Every high-level cached endpoint gets an automatic endpoint tag. Query variants share that endpoint tag, while Next.js still uses the complete request URL/options as the actual cache key.
@@ -428,43 +428,44 @@ await reloadPage('/events/123');
 Pretty logs report the **effective cache policy**, not a fabricated cache hit/miss. Next.js does not expose a supported per-fetch hit/miss field to this library.
 
 ```text
-↗ GET /reference/timezones 200 8ms 10.6 KB cache 1h
-↗ GET /events/123 200 13ms 1.9 KB cache 30s
-↗ GET /auth/me 200 40ms 3.7 KB backend
+↗ 200 GET /reference/timezones 8ms 10.6kb cache 1h
+↗ 200 GET /events/123 13ms 1.9kb cache 30s
+↗ 200 GET /auth/me 40ms 3.7kb
 ```
 
-A `cache 1h` line means the request is configured for Next.js caching with a one-hour lifetime. It does not claim whether that specific read was a hit or a backend fill.
+A `cache 1h` line means the request is configured for Next.js caching with a one-hour lifetime. It does not claim whether that specific read was a hit or a backend fill. Normal live/backend requests intentionally have no source suffix, keeping the common path compact.
 
 ## Logging
 
 Pretty logs use a small arrow as the bridge identity and otherwise stay close to ordinary request logs:
 
 ```text
-↗ POST /auth/login 201 42ms 842 B (128 B sent) backend
-↗ GET /auth/me 200 18ms 1.4 KB backend
-↗ GET /reference/timezones 200 8ms 10.6 KB cache 1h
-↗ PATCH /events/01a0ecee-8967-7eb1-91a0-5e45014dc35b 200 36ms 646 B (19 B sent) backend
-↗ POST /orders 422 36ms 311 B (2.8 KB sent) backend — Invalid ticket selection
+↗ 201 POST /auth/login 42ms 842b (128b sent)
+↗ 200 GET /auth/me 18ms 1.4kb
+↗ 200 GET /reference/timezones 8ms 10.6kb cache 1h
+↗ 200 PATCH /events/01a0ecee-8967-7eb1-91a0-5e45014dc35b 36ms 646b (19b sent)
+↗ 422 POST /orders 36ms 311b (2.8kb sent) — Invalid ticket selection
 ```
 
 Pretty logs never truncate endpoint paths and never print request IDs. Request IDs remain available to JSON and custom structured loggers.
 
 The terminal palette is intentionally narrow:
 
-- `↗ METHOD /path` uses one cyan accent
+- `↗` and `METHOD /path` use one cyan accent
 - status is the only semantic color: green for 2xx, cyan for 3xx, yellow for 4xx, red for 5xx/ERR
-- duration, payload sizes, sent-size metadata, and cache/backend policy use gray
+- duration, payload sizes, and sent-size metadata use gray
+- cache policy is shown only for cached requests and uses magenta
 - error text does not introduce another competing semantic color
 
 `NO_COLOR`, non-TTY output, JSON logs, and custom structured loggers remain ANSI-free.
 
 JSON is the common response type and is intentionally not labelled. Non-JSON payloads are labelled only when the type adds useful information, such as `multipart`, `csv`, `pdf`, `text`, or an image MIME type.
 
-Response size is shown directly. Request size is the only size wrapped in parentheses:
+Response size is shown directly. Request size is the only size wrapped in parentheses. Byte units are compact and lowercase with no separator, for example `65b`, `50kb`, and `1.2mb`:
 
 ```text
-↗ POST /orders 201 42ms 842 B (128 B sent) backend
-↗ POST /media 201 812ms 206 B (8.2 MB+ multipart sent) backend
+↗ 201 POST /orders 42ms 842b (128b sent)
+↗ 201 POST /media 812ms 206b (8.2mb+ multipart sent)
 ```
 
 Multipart sizes end in `+` because the bridge reports known field/file payload bytes without buffering the encoded multipart body merely to calculate boundary overhead.
@@ -532,14 +533,14 @@ logging: {
 Objects with up to three top-level keys stay on one line when all values are simple scalars:
 
 ```text
-↗ PATCH /events/123 200 36ms 646 B (19 B sent) backend
+↗ 200 PATCH /events/123 36ms 646b (19b sent)
   └─ request body { status: 'paused' }
 ```
 
 Larger or nested values expand automatically:
 
 ```text
-↗ POST /orders 201 42ms 842 B (1.2 KB sent) backend
+↗ 201 POST /orders 42ms 842b (1.2kb sent)
   └─ request body
      {
        quantity: 2,
@@ -552,7 +553,7 @@ Larger or nested values expand automatically:
 When multiple details are enabled, the same compact tree is used:
 
 ```text
-↗ POST /orders 201 42ms 842 B (128 B sent) backend
+↗ 201 POST /orders 42ms 842b (128b sent)
   ├─ request body { quantity: 2, type: 'adult' }
   └─ response body { success: true, orderId: 'order-1' }
 ```

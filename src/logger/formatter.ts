@@ -14,10 +14,10 @@ function trimNumber(value: string): string {
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '';
-  if (bytes < 1024) return `${Math.round(bytes)} B`;
-  if (bytes < 1024 * 1024) return `${trimNumber((bytes / 1024).toFixed(1))} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${trimNumber((bytes / (1024 * 1024)).toFixed(1))} MB`;
-  return `${trimNumber((bytes / (1024 * 1024 * 1024)).toFixed(1))} GB`;
+  if (bytes < 1024) return `${Math.round(bytes)}b`;
+  if (bytes < 1024 * 1024) return `${trimNumber((bytes / 1024).toFixed(1))}kb`;
+  if (bytes < 1024 * 1024 * 1024) return `${trimNumber((bytes / (1024 * 1024)).toFixed(1))}mb`;
+  return `${trimNumber((bytes / (1024 * 1024 * 1024)).toFixed(1))}gb`;
 }
 
 export function formatDuration(durationMs?: number): string {
@@ -35,7 +35,7 @@ function formatCacheLifetime(revalidate?: number | false): string {
 }
 
 function cacheDescription(entry: SafeLogEntry): string {
-  if (!entry.cache || entry.cache.mode === 'backend') return 'backend';
+  if (!entry.cache || entry.cache.mode !== 'cache') return '';
   return formatCacheLifetime(entry.cache.revalidate);
 }
 
@@ -227,15 +227,21 @@ export function formatPrettyLogLine(
   const requestSize = payloadDescription(entry.request, true);
   const cache = cacheDescription(entry);
 
-  const prefix = color.cyan(`↗ ${method} ${path}`);
+  const identity = color.cyan('↗');
+  const target = color.cyan(`${method} ${path}`);
   const metadata = [
     duration,
     responseSize,
     requestSize ? `(${requestSize})` : '',
-    cache,
   ].filter(Boolean).join(' ');
 
-  let line = [prefix, colorStatus(status, color), metadata ? color.gray(metadata) : '']
+  let line = [
+    identity,
+    colorStatus(status, color),
+    target,
+    metadata ? color.gray(metadata) : '',
+    cache ? color.magenta(cache) : '',
+  ]
     .filter(Boolean)
     .join(' ');
 
