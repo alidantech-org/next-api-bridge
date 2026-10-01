@@ -3,7 +3,13 @@ export { parseSetCookieHeader, parseSetCookieString, splitSetCookieHeader } from
 export { applyCookiePolicy, normalizeCookiePolicy, shouldDeleteCookie } from './cookies/policy';
 export { syncResponseCookies } from './cookies/sync-response-cookies';
 export { normalizeLogging, resolveRequestLogging, isLogLevelEnabled } from './logger/config';
-export { formatBytes, formatDuration, formatPrettyLogDetails, formatPrettyLogLine } from './logger/formatter';
+export {
+  formatBytes,
+  formatDuration,
+  formatJsonLogLine,
+  formatPrettyLogDetails,
+  formatPrettyLogLine,
+} from './logger/formatter';
 export { buildRequestLogPayload, classifyContentType, utf8ByteLength } from './logger/metadata';
 export { redactHeaders, redactValue, sanitizeUrlForLog } from './logger/redact';
 export {

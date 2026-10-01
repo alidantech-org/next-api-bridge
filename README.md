@@ -457,7 +457,7 @@ The terminal palette is intentionally narrow:
 - cache policy is shown only for cached requests and uses magenta
 - error text does not introduce another competing semantic color
 
-`NO_COLOR`, non-TTY output, JSON logs, and custom structured loggers remain ANSI-free.
+`NO_COLOR`, non-TTY output, and custom structured loggers remain ANSI-free. Built-in `format: 'json'` output is syntax highlighted when color is enabled in an interactive terminal, while redirected/non-TTY JSON remains plain parseable JSON.
 
 JSON is the common response type and is intentionally not labelled. Non-JSON payloads are labelled only when the type adds useful information, such as `multipart`, `csv`, `pdf`, `text`, or an image MIME type.
 
@@ -511,6 +511,17 @@ const api = createNextApiBridge({
 ```
 
 Levels are `silent | error | warn | info | debug | trace`.
+
+For built-in JSON output, terminal syntax highlighting follows the same `color` setting:
+
+```ts
+logging: {
+  format: 'json',
+  color: 'auto',
+}
+```
+
+In an interactive terminal, JSON keys, string values, numbers, booleans, and null values receive distinct ANSI syntax colors. The underlying serialized content is unchanged; disabling color or redirecting non-TTY output produces ordinary compact JSON suitable for parsers. Custom `logging.logger` callbacks always receive the redacted JavaScript object and never ANSI-decorated strings.
 
 Normal `info` logging emits one completed-request row. It does not emit separate request/response lines, repeated success messages, client-origin discovery messages, or raw cookie activity.
 

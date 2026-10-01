@@ -1,7 +1,7 @@
 import type { BridgeLogger, SafeLogEntry } from '../types';
 import type { NormalizedLoggingOptions } from './config';
 import { isLogLevelEnabled } from './config';
-import { formatPrettyLogDetails, formatPrettyLogLine } from './formatter';
+import { formatJsonLogLine, formatPrettyLogDetails, formatPrettyLogLine } from './formatter';
 import { redactValue } from './redact';
 
 export type VerboseLogOption = 'request' | 'body' | 'response';
@@ -54,7 +54,7 @@ function writeConfiguredLog(
 
   const writer = writerFor(level);
   if (options.format === 'json') {
-    writer(JSON.stringify(sanitized));
+    writer(formatJsonLogLine(sanitized, options));
     return;
   }
 
