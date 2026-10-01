@@ -38,9 +38,9 @@ export async function emptyAction(_previous: unknown, _formData: FormData) {
 }
 
 export async function cacheAction(_previous: unknown, _formData: FormData) {
-  const forceOne = await api.get('/cache', { cache: 'force-cache', query: { key: 'force' } });
-  const forceTwo = await api.get('/cache', { cache: 'force-cache', query: { key: 'force' } });
-  const freshOne = await api.get('/cache', { cache: 'no-store', query: { key: 'fresh' } });
-  const freshTwo = await api.get('/cache', { cache: 'no-store', query: { key: 'fresh' } });
+  const forceOne = await api.get('/cache', { query: { key: 'force' } });
+  const forceTwo = await api.get('/cache', { query: { key: 'force' } });
+  const freshOne = await api.get('/cache', { caching: false, query: { key: 'fresh' } });
+  const freshTwo = await api.get('/cache', { caching: false, query: { key: 'fresh' } });
   return { forceOne, forceTwo, freshOne, freshTwo };
 }
