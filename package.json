@@ -1,7 +1,7 @@
 {
   "name": "next-api-bridge",
-  "version": "0.1.6",
-  "description": "Cookie-aware API bridge for Next.js App Router with Server Actions. Handles auth, cookies, and session flow entirely on the server for external backends.",
+  "version": "0.1.7",
+  "description": "Cookie-aware API bridge for Next.js App Router with Server Actions. Handles auth, cookies, safe request context, and session flow entirely on the server for external backends.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -16,9 +16,15 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "npm run build && node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm run build"
+    "build:test": "tsc -p tsconfig.test.json && node tests/write-test-package-type.cjs",
+    "test:unit": "npm run build:test && node --test tests/unit/*.test.cjs",
+    "test:integration": "npm run build:test && node --test tests/integration/*.test.cjs",
+    "test:e2e": "node tests/e2e/run.mjs",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:matrix": "npm run typecheck && npm run test && npm run build && npm run pack:verify",
+    "pack:verify": "node tests/pack-verify.mjs",
+    "prepublishOnly": "npm run typecheck && npm run test:unit && npm run test:integration && npm run build && npm run pack:verify"
   },
   "keywords": [
     "nextjs",
@@ -70,10 +76,16 @@
       "types": "./dist/query.d.ts",
       "import": "./dist/query.js",
       "require": "./dist/query.cjs"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "require": "./dist/testing.cjs"
     }
   },
   "peerDependencies": {
-    "next": ">=13.0.0"
+    "next": ">=15.0.0 <17.0.0",
+    "sonner": ">=1.0.0"
   },
   "peerDependenciesMeta": {
     "sonner": {
@@ -85,8 +97,11 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "next": "^15.0.0",
     "tsup": "^8.0.0",
-    "typescript": "^5.0.0",
-    "next": "^15.0.0"
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

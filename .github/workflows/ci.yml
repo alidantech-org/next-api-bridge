@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'chatgpt/**'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Node ${{ matrix.node }} / Next ${{ matrix.next }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+        next: [15, 16]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm install
+      - run: npm install --no-save next@${{ matrix.next }}
+      - run: npm run test:matrix
+      - name: Upload synchronized lockfile
+        if: matrix.node == 22 && matrix.next == 16
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock-0.1.7
+          path: package-lock.json
+
+  e2e:
+    name: E2E Node ${{ matrix.node }} / Next ${{ matrix.next }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: 20
+            next: 15
+          - node: 20
+            next: 16
+          - node: 22
+            next: 15
+          - node: 22
+            next: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm install
+      - name: Run packed production Next.js E2E
+        run: npm run test:e2e
+        env:
+          NEXT_E2E_VERSION: ${{ matrix.next }}
+          CI: 'true'

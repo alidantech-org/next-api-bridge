@@ -1,16 +1,26 @@
-/**
- * Standard API response format.
- */
+export type CookieSyncReason =
+  | 'read-only-context'
+  | 'no-set-cookie'
+  | 'invalid-cookie'
+  | 'applied';
+
+export interface CookieSyncInfo {
+  attempted: boolean;
+  applied: boolean;
+  reason?: CookieSyncReason;
+}
+
 export interface ApiBridgeResponse<T> {
   success: boolean;
   message: string;
   body: T | null;
-  headers?: Headers;
+  status: number;
+  statusText?: string;
+  headers?: Record<string, string>;
+  errorCode?: string;
+  cookieSync?: CookieSyncInfo;
 }
 
-/**
- * Form action response format for Server Actions.
- */
 export type FormActionResponse<T, R> = Promise<{
   formdata: Partial<T>;
   success: boolean;

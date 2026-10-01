@@ -6,44 +6,51 @@ on:
       - 'v*'
   workflow_dispatch:
 
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    environment: production
+permissions:
+  contents: read
 
+jobs:
+  verify:
+    name: Verify Node ${{ matrix.node }} / Next ${{ matrix.next }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+        next: [15, 16]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Check if tag is from main branch
+      - name: Ensure tag commit belongs to main
         run: |
-          BRANCH=$(git branch --contains $(git rev-parse HEAD) | grep main || true)
-          if [ -z "$BRANCH" ]; then
-            echo "❌ Tag must be pushed from main branch"
-            echo "Current branches containing this commit:"
-            git branch --contains $(git rev-parse HEAD)
-            exit 1
-          fi
-          echo "✅ Tag is from main branch"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+          git fetch origin main
+          git branch -r --contains HEAD | grep -q 'origin/main'
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node }}
+          cache: npm
           registry-url: 'https://registry.npmjs.org'
+      - run: npm install
+      - run: npm install --no-save next@${{ matrix.next }}
+      - run: npm run test:matrix
+      - name: Run packed production E2E
+        run: npm run test:e2e
+        env:
+          NEXT_E2E_VERSION: ${{ matrix.next }}
+          CI: 'true'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Publish to npm
-        run: npm publish
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm install
+      - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

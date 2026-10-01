@@ -1,41 +1,85 @@
 import type { BearerAuthConfig } from './auth';
+import type { CookiePolicyOptions } from './cookies';
+import type { SafeLogEntry } from './logging';
 
-/**
- * Configuration options for creating an API bridge client.
- */
+export type ForwardableRequestHeader =
+  | 'user-agent'
+  | 'accept-language'
+  | 'traceparent'
+  | 'baggage';
+
+export type TrustProxyConfig =
+  | false
+  | 'vercel'
+  | 'cloudflare'
+  | {
+      headers: string[];
+      trustedProxyHops?: number;
+    };
+
+export interface RequestContextOptions {
+  enabled?: boolean;
+  forwardHeaders?: ForwardableRequestHeader[];
+  requestId?: {
+    incomingHeaders?: string[];
+    outgoingHeader?: string;
+    generateWhenMissing?: boolean;
+  };
+  clientIp?: {
+    enabled?: boolean;
+    trustProxy: TrustProxyConfig;
+    outgoingHeader?: string;
+  };
+  clientOrigin?: {
+    enabled?: boolean;
+    cookieName?: string;
+    allowedHosts?: string[];
+    allowedOrigins?: string[];
+    outgoingHeader?: string;
+  };
+}
+
+export interface BridgeLogger {
+  debug?(entry: SafeLogEntry): void;
+  info?(entry: SafeLogEntry): void;
+  warn?(entry: SafeLogEntry): void;
+  error?(entry: SafeLogEntry): void;
+}
+
 export interface ApiBridgeOptions {
-  /** Base URL of the backend API (required) */
   baseUrl: string;
-  /** Prefix for backend cookies (default: 'nab_') */
   cookiePrefix?: string;
-  /** Optional API key for authentication */
   apiKey?: string;
-  /** Header name for API key (required if apiKey is provided) */
   apiKeyHeader?: string;
-  /** Optional Bearer token authentication configuration */
   auth?: BearerAuthConfig;
-  /** Comma-separated verbose logging options (e.g., 'request,body,response') */
   verbose?: string;
+  logger?: BridgeLogger;
+  requestContext?: RequestContextOptions;
+  cookiePolicy?: CookiePolicyOptions;
 }
 
-/**
- * Request options for API calls.
- */
+export interface NextCacheOptions {
+  revalidate?: number | false;
+  tags?: string[];
+}
+
 export interface RequestOptions {
-  /** Query parameters to append to the URL */
   query?: Record<string, unknown>;
-  /** Path parameters to insert into the URL */
   params?: string[];
-  /** Cache control option */
   cache?: 'no-store' | 'force-cache' | 'only-if-cached';
-  /** Whether the request is multipart/form-data */
   isMultipart?: boolean;
+  next?: NextCacheOptions;
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  operationName?: string;
+  responseType?: 'json' | 'text';
 }
 
-/**
- * Result of request preparation.
- */
 export interface PrepareRequestResult {
   url: string;
-  fetchOptions: RequestInit;
+  fetchOptions: RequestInit & { next?: NextCacheOptions };
+  requestId?: string;
+  cleanupSignal(): void;
+  didTimeout(): boolean;
 }
