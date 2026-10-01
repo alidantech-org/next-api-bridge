@@ -1,19 +1,22 @@
 import type {
   ApiBridgeResponse,
+  BridgeLogPayload,
   PrepareRequestResult,
   RequestOptions,
 } from '../types';
 import type { NormalizedOptions } from '../config/validate';
 import { buildBackendCookieHeader } from '../cookies/build-cookie-header';
 import { syncResponseCookies, type CookieStoreLike } from '../cookies/sync-response-cookies';
-import { emitLog, shouldLog } from '../logger/logger';
+import { isLogLevelEnabled, resolveRequestLogging } from '../logger/config';
+import { emitLog } from '../logger/logger';
+import { buildRequestLogPayload, headersToRecord } from '../logger/metadata';
 import { sanitizeUrlForLog } from '../logger/redact';
 import { assertAllowedCustomHeaders, validateHeaderValue } from '../security/headers';
 import { buildRequestContextHeaders } from './context';
 import { validateCacheOptions } from './cache';
 import { combineAbortSignals } from './signal';
 import { buildRequestUrl } from './url';
-import { parseApiResponse } from '../response/parse-response';
+import { parseApiResponseWithMeta } from '../response/parse-response';
 
 function isFormData(value: unknown): value is FormData {
   return typeof FormData !== 'undefined' && value instanceof FormData;
@@ -123,12 +126,25 @@ export async function prepareBridgeRequest({
   };
 }
 
-function shouldEmitRequestLog(options: NormalizedOptions): boolean {
-  return Boolean(options.logger) || shouldLog('request', options.verbose) || shouldLog('body', options.verbose);
-}
+function buildLoggedRequestPayload(
+  body: unknown,
+  prepared: PrepareRequestResult,
+  bodyMode: ReturnType<typeof resolveRequestLogging>['request']['body'],
+  includeHeaders: boolean,
+): BridgeLogPayload | undefined {
+  const headers = prepared.fetchOptions.headers as Record<string, string> | undefined;
+  const payload = buildRequestLogPayload({
+    originalBody: body,
+    serializedBody: prepared.fetchOptions.body ?? undefined,
+    contentType: headers?.['content-type'],
+    bodyMode,
+  });
 
-function shouldEmitResponseLog(options: NormalizedOptions): boolean {
-  return Boolean(options.logger) || shouldLog('response', options.verbose);
+  if (!includeHeaders) return payload;
+  return {
+    ...(payload ?? {}),
+    headers: headersToRecord(prepared.fetchOptions.headers),
+  };
 }
 
 export async function executeBridgeRequest<T>({
@@ -150,6 +166,7 @@ export async function executeBridgeRequest<T>({
   incomingHeaders: Headers;
   fetchImpl?: typeof fetch;
 }): Promise<ApiBridgeResponse<T>> {
+  const logging = resolveRequestLogging(normalizedOptions.logging, requestOptions.logging);
   const prepared = await prepareBridgeRequest({
     normalizedOptions,
     method,
@@ -160,17 +177,6 @@ export async function executeBridgeRequest<T>({
     incomingHeaders,
   });
   const startedAt = Date.now();
-  const logUrl = sanitizeUrlForLog(prepared.url);
-
-  if (shouldEmitRequestLog(normalizedOptions)) {
-    emitLog(normalizedOptions.logger, 'debug', {
-      event: 'request',
-      method,
-      url: logUrl,
-      requestId: prepared.requestId,
-      operationName: requestOptions.operationName,
-    });
-  }
 
   try {
     const response = await fetchImpl(prepared.url, prepared.fetchOptions);
@@ -182,36 +188,82 @@ export async function executeBridgeRequest<T>({
       requestIsSecure: incomingHeaders.get('x-forwarded-proto')?.split(',')[0]?.trim() === 'https' ||
         process.env.NODE_ENV === 'production',
     });
-    const result = await parseApiResponse<T>(response, requestOptions.responseType);
+
+    const preliminaryLevel = response.ok ? 'info' : 'warn';
+    const measureBodyBytes = isLogLevelEnabled(logging.level, preliminaryLevel);
+    const parsed = await parseApiResponseWithMeta<T>(
+      response,
+      requestOptions.responseType,
+      measureBodyBytes,
+    );
+    const result = parsed.result;
     result.cookieSync = cookieSync;
 
-    if (shouldEmitResponseLog(normalizedOptions)) {
-      emitLog(normalizedOptions.logger, response.ok ? 'info' : 'warn', {
+    const logLevel = response.ok && result.success ? 'info' : 'warn';
+    if (isLogLevelEnabled(logging.level, logLevel)) {
+      const requestPayload = buildLoggedRequestPayload(
+        body,
+        prepared,
+        logging.request.body,
+        logging.request.headers,
+      );
+      const responsePayload: BridgeLogPayload = {
+        body: logging.response.body === false ? undefined : result.body,
+        bodyBytes: parsed.metadata.bodyBytes,
+        bodyType: parsed.metadata.bodyType,
+        contentType: parsed.metadata.contentType,
+        headers: logging.response.headers ? Object.fromEntries(response.headers.entries()) : undefined,
+      };
+
+      emitLog(logging, logLevel, {
         event: 'response',
         method,
-        url: logUrl,
+        path,
+        url: logging.level === 'trace' ? sanitizeUrlForLog(prepared.url) : undefined,
         status: result.status,
         durationMs: Date.now() - startedAt,
         requestId: prepared.requestId,
         operationName: requestOptions.operationName,
+        message: logLevel === 'warn' ? result.message : undefined,
+        errorCode: result.errorCode,
+        request: requestPayload,
+        response: responsePayload,
+        details: cookieSync.attempted ? { cookieSync } : undefined,
       });
     }
+
     return result;
   } catch (error) {
     const timedOut = prepared.didTimeout();
-    const aborted = !timedOut && (requestOptions.signal?.aborted || (error instanceof Error && error.name === 'AbortError'));
+    const aborted = !timedOut && (requestOptions.signal?.aborted ||
+      (error instanceof Error && error.name === 'AbortError'));
     const errorCode = timedOut ? 'REQUEST_TIMEOUT' : aborted ? 'REQUEST_ABORTED' : 'NETWORK_ERROR';
-    const message = timedOut ? 'Backend request timed out' : aborted ? 'Backend request was aborted' : 'Backend request failed';
-    emitLog(normalizedOptions.logger, 'error', {
-      event: 'error',
-      method,
-      url: logUrl,
-      durationMs: Date.now() - startedAt,
-      requestId: prepared.requestId,
-      operationName: requestOptions.operationName,
-      errorCode,
-      message,
-    });
+    const message = timedOut
+      ? 'Backend request timed out'
+      : aborted
+        ? 'Backend request was aborted'
+        : 'Backend request failed';
+
+    if (isLogLevelEnabled(logging.level, 'error')) {
+      emitLog(logging, 'error', {
+        event: 'error',
+        method,
+        path,
+        url: logging.level === 'trace' ? sanitizeUrlForLog(prepared.url) : undefined,
+        durationMs: Date.now() - startedAt,
+        requestId: prepared.requestId,
+        operationName: requestOptions.operationName,
+        errorCode,
+        message,
+        request: buildLoggedRequestPayload(
+          body,
+          prepared,
+          logging.request.body,
+          logging.request.headers,
+        ),
+      });
+    }
+
     return {
       success: false,
       message,

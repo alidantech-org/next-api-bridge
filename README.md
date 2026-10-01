@@ -336,25 +336,173 @@ A context-free public/static client is intentionally deferred to 0.2.
 
 ## Logging
 
-The optional logger receives structured safe entries:
+Logging is compact by default and expands only when explicitly requested.
+
+In development, successful backend calls use one aligned terminal row:
+
+```text
+API  POST     /auth/login                          201      42ms  842 B (128 B sent)
+API  GET      /auth/me                             200      18ms  1.4 KB
+API  POST     /orders                              422      36ms  311 B (2.8 KB sent)  Invalid ticket selection
+API  POST     /media                               201     812ms  206 B (8.2 MB+ multipart sent)  LARGE
+```
+
+JSON is the common case and is intentionally not labelled. Non-JSON payloads are labelled only when the type adds useful information, such as `multipart`, `csv`, `pdf`, `text`, or an image MIME type.
+
+The size column is always response-first. A request body appears in parentheses:
+
+```text
+5 KB (3 KB sent)
+```
+
+Multipart sizes end in `+` because the bridge reports the known field/file payload bytes without buffering the encoded multipart body merely to calculate boundary overhead.
+
+The default logging level is:
+
+- `info` in development
+- `warn` outside development
+- `silent` when `NODE_ENV=test`
+
+Terminal colors are selective and enabled automatically only for an interactive TTY. Statuses, slow requests, large payloads, and errors are highlighted; files, JSON logs, `NO_COLOR`, and non-TTY output stay free of ANSI escape codes.
+
+### Configuration
 
 ```ts
 const api = createNextApiBridge({
   baseUrl: process.env.API_URL!,
-  logger: {
-    info(entry) {
-      console.info(entry);
+  logging: {
+    level: 'info',
+    format: 'pretty',
+    color: 'auto',
+
+    request: {
+      headers: false,
+      body: false,
     },
-    error(entry) {
-      console.error(entry);
+
+    response: {
+      headers: false,
+      body: false,
+    },
+
+    inspect: {
+      depth: 3,
+      maxArrayLength: 20,
+      maxStringLength: 500,
+      breakLength: 120,
+      compact: true,
+    },
+
+    slowRequestMs: 1000,
+    largeBodyBytes: 5 * 1024 * 1024,
+  },
+});
+```
+
+Levels are `silent | error | warn | info | debug | trace`.
+
+Normal `info` logging emits one completed-request row. It does not emit separate request/response lines, repeated success messages, client-origin discovery messages, or raw cookie activity.
+
+At `debug`, operation names are added when available. At `trace`, request IDs and the sanitized full backend URL are available in structured entries.
+
+### Request and response bodies
+
+Bodies remain off by default. Enable them independently as `summary` or `full`:
+
+```ts
+logging: {
+  level: 'debug',
+  request: {
+    body: 'full',
+  },
+  response: {
+    body: 'summary',
+  },
+}
+```
+
+`summary` reports shape information such as object key count, array length, byte size, or multipart field/file counts.
+
+`full` passes the redacted value to Node's real object inspector rather than JSON-stringifying it. Inspection is bounded by `depth`, `maxArrayLength`, and `maxStringLength`, so nested or very large objects do not flood the terminal.
+
+Sensitive values are redacted before formatting or before a custom logger receives the entry. Built-in protection includes authorization, cookies, `Set-Cookie`, passwords, API keys, secrets, access/refresh tokens, sessions, client secrets, and OTPs.
+
+Applications can add their own sensitive field/header names:
+
+```ts
+logging: {
+  redact: {
+    keys: ['nationalId'],
+    headers: ['x-private-key'],
+  },
+}
+```
+
+Built-in redaction cannot be disabled.
+
+### Per-request debugging
+
+A noisy endpoint can be inspected without enabling verbose logging globally:
+
+```ts
+await api.post('/checkout', body, {
+  operationName: 'checkout.create',
+  logging: {
+    level: 'trace',
+    request: { body: 'full' },
+    response: { body: 'summary' },
+    inspect: { depth: 4 },
+  },
+});
+```
+
+### Structured and file logging
+
+A custom logger receives redacted structured objects instead of preformatted strings:
+
+```ts
+const api = createNextApiBridge({
+  baseUrl: process.env.API_URL!,
+  logging: {
+    level: 'info',
+    logger: {
+      info(entry) {
+        myLogger.info(entry);
+      },
+      warn(entry) {
+        myLogger.warn(entry);
+      },
+      error(entry) {
+        myLogger.error(entry);
+      },
     },
   },
 });
 ```
 
-Entries contain only method, sanitized URL, status, duration, request ID, operation name, stable error code, and safe messages. Request or response bodies are not logged by default.
+This is the intended integration point for Pino, Winston, OpenTelemetry collectors, Datadog, or file logging. The bridge intentionally does not own file handles, rotation, retention, or serverless filesystem behavior.
 
-The existing `verbose` option remains supported, but its output is redacted. Authorization, cookies, `Set-Cookie`, API keys, passwords, secrets, tokens, sessions, client secrets, and OTP values are removed.
+For a simple JSON-lines file logger:
+
+```ts
+import { createWriteStream } from 'node:fs';
+
+const stream = createWriteStream('./api-bridge.log', { flags: 'a' });
+
+const api = createNextApiBridge({
+  baseUrl: process.env.API_URL!,
+  logging: {
+    level: 'info',
+    logger: {
+      info: (entry) => stream.write(`${JSON.stringify(entry)}\n`),
+      warn: (entry) => stream.write(`${JSON.stringify(entry)}\n`),
+      error: (entry) => stream.write(`${JSON.stringify(entry)}\n`),
+    },
+  },
+});
+```
+
+The legacy top-level `logger` and `verbose` options remain supported for 0.1.x compatibility but are deprecated in favor of `logging`.
 
 ## Migration from 0.1.6
 

@@ -1,6 +1,10 @@
 import type { BearerAuthConfig } from './auth';
 import type { CookiePolicyOptions } from './cookies';
-import type { SafeLogEntry } from './logging';
+import type {
+  BridgeLogger,
+  BridgeLoggingOptions,
+  RequestLoggingOptions,
+} from './logging';
 
 export type ForwardableRequestHeader =
   | 'user-agent'
@@ -39,21 +43,17 @@ export interface RequestContextOptions {
   };
 }
 
-export interface BridgeLogger {
-  debug?(entry: SafeLogEntry): void;
-  info?(entry: SafeLogEntry): void;
-  warn?(entry: SafeLogEntry): void;
-  error?(entry: SafeLogEntry): void;
-}
-
 export interface ApiBridgeOptions {
   baseUrl: string;
   cookiePrefix?: string;
   apiKey?: string;
   apiKeyHeader?: string;
   auth?: BearerAuthConfig;
+  /** @deprecated Use logging instead. */
   verbose?: string;
+  /** @deprecated Use logging.logger instead. */
   logger?: BridgeLogger;
+  logging?: BridgeLoggingOptions;
   requestContext?: RequestContextOptions;
   cookiePolicy?: CookiePolicyOptions;
 }
@@ -74,6 +74,7 @@ export interface RequestOptions {
   timeoutMs?: number;
   operationName?: string;
   responseType?: 'json' | 'text';
+  logging?: RequestLoggingOptions;
 }
 
 export interface PrepareRequestResult {

@@ -218,3 +218,91 @@ test('query absence never reaches the backend as literal undefined or null', asy
   assert.match(lastRequest.url, /search=/);
   assert.doesNotMatch(lastRequest.url, /undefined|null/);
 });
+
+
+test('structured logging records compact request and response metrics without bodies by default', async () => {
+  const entries = [];
+  const body = { hello: 'world', count: 2 };
+
+  await request({
+    method: 'POST',
+    body,
+    options: {
+      logging: {
+        level: 'info',
+        logger: {
+          info: (entry) => entries.push(entry),
+        },
+      },
+    },
+    requestOptions: { operationName: 'integration.metrics' },
+  });
+
+  assert.equal(entries.length, 1);
+  const entry = entries[0];
+  assert.equal(entry.event, 'response');
+  assert.equal(entry.operationName, 'integration.metrics');
+  assert.equal(entry.request.bodyBytes, Buffer.byteLength(JSON.stringify(body)));
+  assert.equal(entry.request.bodyType, 'json');
+  assert.equal(entry.request.body, undefined);
+  assert.equal(entry.response.bodyType, 'json');
+  assert.equal(entry.response.body, undefined);
+  assert.equal(entry.response.bodyBytes > 0, true);
+});
+
+test('explicit full-body logging keeps real structured objects but redacts secrets', async () => {
+  const entries = [];
+  const body = {
+    email: 'person@example.com',
+    password: 'secret-password',
+    nested: {
+      token: 'secret-token',
+      safe: 'visible',
+    },
+  };
+
+  await request({
+    method: 'POST',
+    body,
+    options: {
+      logging: {
+        level: 'info',
+        request: { body: 'full' },
+        response: { body: 'full' },
+        redact: { keys: ['email'] },
+        logger: {
+          info: (entry) => entries.push(entry),
+        },
+      },
+    },
+  });
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].request.body.email, '[REDACTED]');
+  assert.equal(entries[0].request.body.password, '[REDACTED]');
+  assert.equal(entries[0].request.body.nested.token, '[REDACTED]');
+  assert.equal(entries[0].request.body.nested.safe, 'visible');
+  assert.equal(typeof entries[0].response.body, 'object');
+});
+
+test('per-request logging can temporarily enable a globally silent logger', async () => {
+  const entries = [];
+
+  await request({
+    options: {
+      logging: {
+        level: 'silent',
+        logger: {
+          info: (entry) => entries.push(entry),
+        },
+      },
+    },
+    requestOptions: {
+      operationName: 'integration.once',
+      logging: { level: 'info' },
+    },
+  });
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].operationName, 'integration.once');
+});

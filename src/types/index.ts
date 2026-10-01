@@ -1,6 +1,5 @@
 export type {
   ApiBridgeOptions,
-  BridgeLogger,
   ForwardableRequestHeader,
   NextCacheOptions,
   PrepareRequestResult,
@@ -23,5 +22,19 @@ export type {
   ParsedCookie,
 } from './cookies';
 
-export type { SafeLogEntry } from './logging';
+export type {
+  BridgeLogBodyMode,
+  BridgeLogColor,
+  BridgeLogFormat,
+  BridgeLogInspectOptions,
+  BridgeLogLevel,
+  BridgeLogPayload,
+  BridgeLogger,
+  BridgeLoggingOptions,
+  BridgeLogRedactOptions,
+  BridgeLogSectionOptions,
+  RequestLoggingOptions,
+  SafeLogEntry,
+} from './logging';
+
 export type { BearerAuthConfig } from './auth';
