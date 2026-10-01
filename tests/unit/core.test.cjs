@@ -505,6 +505,42 @@ test('pretty log colors use cyan identity, semantic status, gray metrics, and ma
   assert.match(cached, /\x1b\[90m8ms 10\.6kb\x1b\[0m/);
 });
 
+test('JSON log formatter syntax highlights interactive output without changing JSON content', () => {
+  const colored = testing.validateAndNormalizeOptions({
+    baseUrl: 'https://api.example.com',
+    logging: { level: 'info', format: 'json', color: true },
+  }).logging;
+  const plain = testing.validateAndNormalizeOptions({
+    baseUrl: 'https://api.example.com',
+    logging: { level: 'info', format: 'json', color: false },
+  }).logging;
+
+  const entry = {
+    event: 'response',
+    method: 'GET',
+    path: '/reference/timezones',
+    status: 200,
+    durationMs: 8,
+    cache: { mode: 'cache', revalidate: 3600, source: 'rule' },
+    details: { enabled: true, empty: null },
+  };
+
+  const plainLine = testing.formatJsonLogLine(entry, plain);
+  assert.equal(plainLine, JSON.stringify(entry));
+  assert.deepEqual(JSON.parse(plainLine), entry);
+
+  const coloredLine = testing.formatJsonLogLine(entry, colored);
+  assert.match(coloredLine, /\x1b\[36m"event"\x1b\[0m/);
+  assert.match(coloredLine, /\x1b\[32m"response"\x1b\[0m/);
+  assert.match(coloredLine, /\x1b\[33m200\x1b\[0m/);
+  assert.match(coloredLine, /\x1b\[35mtrue\x1b\[0m/);
+  assert.match(coloredLine, /\x1b\[35mnull\x1b\[0m/);
+
+  const stripped = coloredLine.replace(/\x1b\[[0-9;]*m/g, '');
+  assert.equal(stripped, JSON.stringify(entry));
+  assert.deepEqual(JSON.parse(stripped), entry);
+});
+
 test('pretty body details stay inline for three simple keys and expand complex bodies', () => {
   const compact = testing.validateAndNormalizeOptions({
     baseUrl: 'https://api.example.com',
