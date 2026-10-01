@@ -7,6 +7,7 @@ import {
   DEFAULT_REQUEST_ID_OUTGOING_HEADER,
 } from './constants';
 import { normalizeCookiePolicy } from '../cookies/policy';
+import { normalizeLogging, type NormalizedLoggingOptions } from '../logger/config';
 import {
   assertValidHeaderName,
   isForbiddenRequestHeader,
@@ -52,6 +53,7 @@ export interface NormalizedOptions {
   auth?: ApiBridgeOptions['auth'];
   verbose?: string;
   logger?: BridgeLogger;
+  logging: NormalizedLoggingOptions;
   requestContext: NormalizedRequestContextOptions;
   cookiePolicy: NormalizedCookiePolicy;
 }
@@ -224,6 +226,7 @@ export function validateAndNormalizeOptions(options: ApiBridgeOptions): Normaliz
     auth: options.auth,
     verbose: options.verbose,
     logger: options.logger,
+    logging: normalizeLogging(options),
     requestContext: normalizeRequestContext(options.requestContext),
     cookiePolicy: normalizeCookiePolicy(options.cookiePolicy),
   };
