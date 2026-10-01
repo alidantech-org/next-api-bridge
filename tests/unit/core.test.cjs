@@ -416,7 +416,7 @@ test('logging config supports compact safe defaults and bounded inspection', () 
   }), /non-negative integer/);
 });
 
-test('pretty logs use the arrow identity, full paths, and backend/cache metadata', () => {
+test('pretty logs use the arrow identity, flat status layout, and cache-only metadata', () => {
   const options = testing.validateAndNormalizeOptions({
     baseUrl: 'https://api.example.com',
     logging: { level: 'trace', color: false },
@@ -435,7 +435,7 @@ test('pretty logs use the arrow identity, full paths, and backend/cache metadata
     cache: { mode: 'backend', source: 'default' },
   }, options);
 
-  assert.equal(line, `↗ POST ${longPath} 201 42ms 842 B (128 B sent) backend`);
+  assert.equal(line, `↗ 201 POST ${longPath} 42ms 842b (128b sent)`);
   assert.doesNotMatch(line, /json/i);
   assert.doesNotMatch(line, /id=/i);
   assert.doesNotMatch(line, /\.\.\./);
@@ -449,7 +449,7 @@ test('pretty logs use the arrow identity, full paths, and backend/cache metadata
     response: { bodyBytes: 10.6 * 1024, bodyType: 'json' },
     cache: { mode: 'cache', revalidate: 3600, source: 'rule' },
   }, options);
-  assert.equal(cached, '↗ GET /reference/timezones 200 8ms 10.6 KB cache 1h');
+  assert.equal(cached, '↗ 200 GET /reference/timezones 8ms 10.6kb cache 1h');
 
   const multipart = testing.formatPrettyLogLine({
     event: 'response',
@@ -466,10 +466,10 @@ test('pretty logs use the arrow identity, full paths, and backend/cache metadata
     cache: { mode: 'backend', source: 'default' },
   }, options);
 
-  assert.equal(multipart, '↗ POST /media 201 812ms 206 B (8 MB+ multipart sent) backend');
+  assert.equal(multipart, '↗ 201 POST /media 812ms 206b (8mb+ multipart sent)');
 });
 
-test('pretty log colors use one accent, semantic status, and gray metadata only', () => {
+test('pretty log colors use cyan identity, semantic status, gray metrics, and magenta cache policy', () => {
   const options = testing.validateAndNormalizeOptions({
     baseUrl: 'https://api.example.com',
     logging: { level: 'info', color: true },
@@ -485,10 +485,24 @@ test('pretty log colors use one accent, semantic status, and gray metadata only'
     cache: { mode: 'backend', source: 'default' },
   }, options);
 
-  assert.match(line, /\x1b\[36m↗ GET \/events\x1b\[0m/);
+  assert.match(line, /\x1b\[36m↗\x1b\[0m/);
   assert.match(line, /\x1b\[32m200\x1b\[0m/);
-  assert.match(line, /\x1b\[90m12ms 759 B backend\x1b\[0m/);
-  assert.doesNotMatch(line, /\x1b\[35m|\x1b\[34m/);
+  assert.match(line, /\x1b\[36mGET \/events\x1b\[0m/);
+  assert.match(line, /\x1b\[90m12ms 759b\x1b\[0m/);
+  assert.doesNotMatch(line, /backend/);
+
+  const cached = testing.formatPrettyLogLine({
+    event: 'response',
+    method: 'GET',
+    path: '/reference/timezones',
+    status: 200,
+    durationMs: 8,
+    response: { bodyBytes: 10.6 * 1024, bodyType: 'json' },
+    cache: { mode: 'cache', revalidate: 3600, source: 'rule' },
+  }, options);
+
+  assert.match(cached, /\x1b\[35mcache 1h\x1b\[0m/);
+  assert.match(cached, /\x1b\[90m8ms 10\.6kb\x1b\[0m/);
 });
 
 test('pretty body details stay inline for three simple keys and expand complex bodies', () => {
