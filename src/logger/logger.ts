@@ -1,9 +1,8 @@
 import type { BridgeLogger, SafeLogEntry } from '../types';
 import type { NormalizedLoggingOptions } from './config';
 import { isLogLevelEnabled } from './config';
-import { formatPrettyLogLine } from './formatter';
+import { formatPrettyLogDetails, formatPrettyLogLine } from './formatter';
 import { redactValue } from './redact';
-import { shouldUseColor } from './colors';
 
 export type VerboseLogOption = 'request' | 'body' | 'response';
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -39,64 +38,6 @@ function writerFor(level: LogLevel): typeof console.log {
   return console.log;
 }
 
-function summarizeBody(body: unknown, bytes?: number): Record<string, unknown> {
-  if (body === null) return { type: 'null', bytes };
-  if (Array.isArray(body)) return { type: 'array', length: body.length, bytes };
-  if (typeof body === 'string') return { type: 'string', length: body.length, bytes };
-  if (body && typeof body === 'object') {
-    return { type: 'object', keys: Object.keys(body as Record<string, unknown>).length, bytes };
-  }
-  return { type: typeof body, bytes };
-}
-
-function writeObject(
-  label: string,
-  value: unknown,
-  options: NormalizedLoggingOptions,
-): void {
-  console.log(`  ${label}`);
-  console.dir(value, {
-    depth: options.inspect.depth,
-    maxArrayLength: options.inspect.maxArrayLength,
-    maxStringLength: options.inspect.maxStringLength,
-    breakLength: options.inspect.breakLength,
-    compact: options.inspect.compact,
-    colors: shouldUseColor(options.color),
-  });
-}
-
-function writePayloadDetails(
-  side: 'request' | 'response',
-  entry: SafeLogEntry,
-  options: NormalizedLoggingOptions,
-): void {
-  const section = options[side];
-  const payload = entry[side];
-  if (!payload) return;
-
-  if (section.headers && payload.headers) {
-    writeObject(`${side}.headers`, payload.headers, options);
-  }
-
-  if (section.body === 'summary') {
-    if (payload.multipart) {
-      writeObject(`${side}.body`, {
-        type: 'multipart',
-        fields: payload.multipart.fields,
-        files: payload.multipart.files,
-        payloadBytes: payload.multipart.payloadBytes,
-        exactWireSize: false,
-      }, options);
-    } else if (payload.body !== undefined) {
-      writeObject(`${side}.body`, summarizeBody(payload.body, payload.bodyBytes), options);
-    }
-  }
-
-  if (section.body === 'full' && payload.body !== undefined) {
-    writeObject(`${side}.body`, payload.body, options);
-  }
-}
-
 function writeConfiguredLog(
   level: LogLevel,
   entry: SafeLogEntry,
@@ -118,8 +59,9 @@ function writeConfiguredLog(
   }
 
   writer(formatPrettyLogLine(sanitized, options));
-  writePayloadDetails('request', sanitized, options);
-  writePayloadDetails('response', sanitized, options);
+  for (const line of formatPrettyLogDetails(sanitized, options)) {
+    writer(line);
+  }
 }
 
 function writeLegacyLog(
