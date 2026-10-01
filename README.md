@@ -135,7 +135,7 @@ Request context is enabled by default. The bridge safely forwards:
 It also sends:
 
 ```text
-x-api-bridge: next-api-bridge/0.1.8
+x-api-bridge: next-api-bridge/0.1.9
 ```
 
 A request ID is preserved from `x-request-id` or generated when absent. `baggage` is supported but must be explicitly enabled.
