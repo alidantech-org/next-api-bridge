@@ -6,7 +6,13 @@ export { normalizeLogging, resolveRequestLogging, isLogLevelEnabled } from './lo
 export { formatBytes, formatDuration, formatPrettyLogDetails, formatPrettyLogLine } from './logger/formatter';
 export { buildRequestLogPayload, classifyContentType, utf8ByteLength } from './logger/metadata';
 export { redactHeaders, redactValue, sanitizeUrlForLog } from './logger/redact';
-export { validateCacheOptions } from './request/cache';
+export {
+  buildApiCacheTag,
+  normalizeCaching,
+  relativeApiPath,
+  resolveCacheRequest,
+  validateCacheOptions,
+} from './request/cache';
 export { buildRequestContextHeaders } from './request/context';
 export { combineAbortSignals } from './request/signal';
 export { executeBridgeRequest, prepareBridgeRequest, serializeRequestBody } from './request/execute';
