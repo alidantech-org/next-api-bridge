@@ -248,6 +248,36 @@ test('structured logging records compact request and response metrics without bo
   assert.equal(entry.response.bodyType, 'json');
   assert.equal(entry.response.body, undefined);
   assert.equal(entry.response.bodyBytes > 0, true);
+  assert.equal(entry.cache.mode, 'backend');
+});
+
+test('structured logging exposes effective cache policy without claiming cache hit or miss', async () => {
+  const entries = [];
+
+  await request({
+    path: '/reference/timezones',
+    options: {
+      caching: {
+        enabled: true,
+        rules: [
+          { match: '/reference/**', revalidate: 3600, tags: ['reference'] },
+        ],
+      },
+      logging: {
+        level: 'info',
+        logger: {
+          info: (entry) => entries.push(entry),
+        },
+      },
+    },
+  });
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].cache.mode, 'cache');
+  assert.equal(entries[0].cache.revalidate, 3600);
+  assert.equal(entries[0].cache.source, 'rule');
+  assert.equal(entries[0].cache.tags.includes('reference'), true);
+  assert.equal(entries[0].cache.tags.some((tag) => tag.startsWith('next-api-bridge:path:')), true);
 });
 
 test('explicit full-body logging keeps real structured objects but redacts secrets', async () => {
