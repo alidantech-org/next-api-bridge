@@ -274,3 +274,122 @@ test('request context forwards only configured safe values and generates IDs', (
   assert.match(result.headers['x-request-id'], /^[0-9a-f-]{36}$/i);
   assert.equal(result.headers['x-api-bridge'], 'next-api-bridge/0.1.7');
 });
+
+
+test('logging config supports compact safe defaults and bounded inspection', () => {
+  const options = testing.validateAndNormalizeOptions({
+    baseUrl: 'https://api.example.com',
+    logging: {
+      level: 'trace',
+      color: false,
+      request: { body: 'summary' },
+      response: { body: 'full' },
+      inspect: {
+        depth: 2,
+        maxArrayLength: 10,
+        maxStringLength: 200,
+      },
+    },
+  });
+
+  assert.equal(options.logging.level, 'trace');
+  assert.equal(options.logging.color, false);
+  assert.equal(options.logging.request.body, 'summary');
+  assert.equal(options.logging.response.body, 'full');
+  assert.equal(options.logging.inspect.depth, 2);
+  assert.equal(options.logging.inspect.maxArrayLength, 10);
+  assert.equal(options.logging.inspect.maxStringLength, 200);
+  assert.throws(() => testing.validateAndNormalizeOptions({
+    baseUrl: 'https://api.example.com',
+    logging: { inspect: { depth: -1 } },
+  }), /non-negative integer/);
+});
+
+test('compact pretty logs keep JSON implicit and align one size column', () => {
+  const options = testing.validateAndNormalizeOptions({
+    baseUrl: 'https://api.example.com',
+    logging: { level: 'info', color: false },
+  }).logging;
+
+  const line = testing.formatPrettyLogLine({
+    event: 'response',
+    method: 'POST',
+    path: '/auth/login',
+    status: 201,
+    durationMs: 42,
+    request: { bodyBytes: 128, bodyType: 'json' },
+    response: { bodyBytes: 842, bodyType: 'json' },
+  }, options);
+
+  assert.match(line, /^API\s+POST\s+\/auth\/login\s+201\s+42ms\s+842 B \(128 B sent\)$/);
+  assert.doesNotMatch(line, /json/i);
+
+  const multipart = testing.formatPrettyLogLine({
+    event: 'response',
+    method: 'POST',
+    path: '/media',
+    status: 201,
+    durationMs: 812,
+    request: {
+      bodyBytes: 8 * 1024 * 1024,
+      bodyType: 'multipart',
+      multipart: { fields: 2, files: 1, payloadBytes: 8 * 1024 * 1024, exact: false },
+    },
+    response: { bodyBytes: 206, bodyType: 'json' },
+  }, options);
+
+  assert.match(multipart, /206 B \(8 MB\+ multipart sent\)/);
+  assert.match(multipart, /LARGE/);
+});
+
+test('body metrics reuse serialized JSON and mark multipart size as approximate', () => {
+  const body = { name: 'Ada', count: 2 };
+  const serialized = JSON.stringify(body);
+  const json = testing.buildRequestLogPayload({
+    originalBody: body,
+    serializedBody: serialized,
+    contentType: 'application/json',
+    bodyMode: false,
+  });
+
+  assert.equal(json.bodyBytes, Buffer.byteLength(serialized));
+  assert.equal(json.bodyType, 'json');
+  assert.equal(json.body, undefined);
+
+  const form = new FormData();
+  form.append('title', 'hello');
+  const multipart = testing.buildRequestLogPayload({
+    originalBody: form,
+    serializedBody: form,
+    bodyMode: false,
+  });
+
+  assert.equal(multipart.bodyBytes, 5);
+  assert.equal(multipart.bodyType, 'multipart');
+  assert.equal(multipart.multipart.exact, false);
+  assert.equal(multipart.multipart.fields, 1);
+});
+
+test('response parsing can collect body size without a second read', async () => {
+  const raw = JSON.stringify({ success: true, value: 'hello' });
+  const parsed = await testing.parseApiResponseWithMeta(new Response(raw, {
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+  }), undefined, true);
+
+  assert.equal(parsed.metadata.bodyBytes, Buffer.byteLength(raw));
+  assert.equal(parsed.metadata.bodyType, 'json');
+  assert.deepEqual(parsed.result.body, { success: true, value: 'hello' });
+});
+
+test('custom logging redaction adds keys without weakening built-in protection', () => {
+  const redacted = testing.redactValue({
+    nationalId: '123456',
+    password: 'secret',
+    nested: { token: 'abc', safe: 'visible' },
+  }, '', ['nationalId']);
+
+  assert.equal(redacted.nationalId, '[REDACTED]');
+  assert.equal(redacted.password, '[REDACTED]');
+  assert.equal(redacted.nested.token, '[REDACTED]');
+  assert.equal(redacted.nested.safe, 'visible');
+});
