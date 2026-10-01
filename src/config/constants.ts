@@ -1,6 +1,6 @@
 import type { ForwardableRequestHeader, NormalizedCookiePolicy } from '../types';
 
-export const PACKAGE_VERSION = '0.1.9';
+export const PACKAGE_VERSION = '0.1.10';
 export const DEFAULT_COOKIE_PREFIX = 'nab_';
 export const EXCLUDED_QUERY_PARAMS = ['__auth_retry'] as const;
 export const DEFAULT_FORWARD_HEADERS: ForwardableRequestHeader[] = [
