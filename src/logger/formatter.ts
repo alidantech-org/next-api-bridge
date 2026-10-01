@@ -6,6 +6,7 @@ const PATH_WIDTH = 36;
 const METHOD_WIDTH = 7;
 const STATUS_WIDTH = 5;
 const TIME_WIDTH = 8;
+const SIZE_WIDTH = 30;
 
 function trimNumber(value: string): string {
   return value.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
@@ -123,12 +124,21 @@ export function formatPrettyLogLine(
   }
   if (entry.errorCode) details.push(color.red(entry.errorCode));
   if (entry.message && entry.message !== 'OK' && entry.message !== 'Success') {
-    details.push(entry.status !== undefined && entry.status >= 400 ? color.yellow(entry.message) : entry.message);
+    if (entry.status !== undefined && entry.status >= 500) {
+      details.push(color.red(entry.message));
+    } else if (entry.status !== undefined && entry.status >= 400) {
+      details.push(color.yellow(entry.message));
+    } else {
+      details.push(entry.message);
+    }
   }
 
   const coloredDuration = slow
     ? color.yellow(durationRaw)
     : color.dim(durationRaw);
+
+  const sizeRaw = size.padEnd(SIZE_WIDTH);
+  const detailText = details.join(' ');
 
   return [
     color.dim('API'),
@@ -136,7 +146,7 @@ export function formatPrettyLogLine(
     pathRaw,
     colorStatus(statusRaw, color),
     coloredDuration,
-    size,
-    details.join(' '),
-  ].filter((part, index) => index < 5 || Boolean(part)).join('  ').trimEnd();
+    sizeRaw,
+    detailText,
+  ].join('  ').trimEnd();
 }
