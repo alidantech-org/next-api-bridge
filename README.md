@@ -318,7 +318,69 @@ const api = createNextApiBridge({
 
 ## Cache behavior
 
-`no-store` remains the default. `RequestOptions.cache` is passed to `fetch.cache`; it is not written into an HTTP `Cache-Control` request header.
+Caching is **opt-in**. The bridge does not create a second cache; it configures Next.js server `fetch` caching so cache keys, persistence, revalidation, and tags remain owned by Next.js.
+
+A bridge can define endpoint rules:
+
+```ts
+const api = createNextApiBridge({
+  baseUrl: process.env.API_URL!,
+  caching: {
+    enabled: true,
+    default: false,
+    rules: [
+      {
+        match: '/reference/**',
+        revalidate: 3600,
+        tags: ['reference'],
+      },
+      {
+        match: '/events/*',
+        revalidate: 30,
+        tags: ['events'],
+      },
+    ],
+  },
+});
+```
+
+`*` matches one path segment and `**` matches any remaining path. The first matching rule wins. High-level bridge caching is limited to `GET` requests, so mutations remain live unless an application deliberately uses the raw Next.js options.
+
+This makes long-lived reference data and frequently changing entities easy to treat differently:
+
+```text
+/reference/timezones       cache 1h
+/reference/categories      cache 1h
+/reference/tags            cache 1h
+/events/:id                cache 30s
+/auth/me                   backend
+/orders                    backend
+```
+
+Every high-level cached endpoint gets an automatic endpoint tag. Query variants share that endpoint tag, while Next.js still uses the complete request URL/options as the actual cache key.
+
+### Per-request cache overrides
+
+Disable a matching rule for one request:
+
+```ts
+await api.get('/events/123', {
+  caching: false,
+});
+```
+
+Or override its lifetime and add tags:
+
+```ts
+await api.get('/events/123', {
+  caching: {
+    revalidate: 10,
+    tags: ['events', 'event:123'],
+  },
+});
+```
+
+The existing raw Next.js escape hatch remains supported:
 
 ```ts
 await api.get('/catalog', {
@@ -330,37 +392,82 @@ await api.get('/catalog', {
 });
 ```
 
-Conflicting combinations are rejected, including `no-store` with a positive `revalidate`, and `force-cache` with `revalidate: 0`.
+Do not combine `caching` with raw `cache`/`next` on the same request; the bridge rejects ambiguous combinations.
 
-A context-free public/static client is intentionally deferred to 0.2.
+### Revalidation after mutations
+
+`next-api-bridge/cache` exposes focused server helpers:
+
+```ts
+import {
+  expireCache,
+  revalidateApiCache,
+  revalidateCache,
+  reloadPage,
+} from 'next-api-bridge/cache';
+
+await api.patch('/events/123', body);
+
+// Force every cached query variant for this API endpoint to refresh.
+await revalidateApiCache('/events/123');
+
+// Mark broader tagged data stale and refresh it using SWR behavior.
+await revalidateCache(['events', 'event:123']);
+
+// Force a custom tag to refresh on the next read.
+await expireCache('event:123');
+
+// Revalidate a Next.js page when UI route data also needs refreshing.
+await reloadPage('/events/123');
+```
+
+`revalidateCache` uses the modern stale-while-revalidate behavior on Next.js 16 while remaining compatible with Next.js 15. `expireCache` and `revalidateApiCache` are intended for read-after-write flows where the next read should not keep the stale entry.
+
+### Cache logging
+
+Pretty logs report the **effective cache policy**, not a fabricated cache hit/miss. Next.js does not expose a supported per-fetch hit/miss field to this library.
+
+```text
+↗ GET /reference/timezones 200 8ms 10.6 KB cache 1h
+↗ GET /events/123 200 13ms 1.9 KB cache 30s
+↗ GET /auth/me 200 40ms 3.7 KB backend
+```
+
+A `cache 1h` line means the request is configured for Next.js caching with a one-hour lifetime. It does not claim whether that specific read was a hit or a backend fill.
 
 ## Logging
 
-Logging is compact by default and uses a distinct bridge identity that sits cleanly beside Next.js output without copying Next.js formatting.
-
-In development, successful backend calls use one compact line with the complete endpoint path:
+Pretty logs use a small arrow as the bridge identity and otherwise stay close to ordinary request logs:
 
 ```text
-@API POST /auth/login 201 42ms 842 B (128 B sent)
-@API GET /auth/me 200 18ms 1.4 KB
-@API PATCH /events/01a0ecee-8967-7eb1-91a0-5e45014dc35b 200 36ms 646 B (19 B sent)
-@API POST /orders 422 36ms 311 B (2.8 KB sent) — Invalid ticket selection
+↗ POST /auth/login 201 42ms 842 B (128 B sent) backend
+↗ GET /auth/me 200 18ms 1.4 KB backend
+↗ GET /reference/timezones 200 8ms 10.6 KB cache 1h
+↗ PATCH /events/01a0ecee-8967-7eb1-91a0-5e45014dc35b 200 36ms 646 B (19 B sent) backend
+↗ POST /orders 422 36ms 311 B (2.8 KB sent) backend — Invalid ticket selection
 ```
 
-Pretty logs never truncate the endpoint and never print request IDs. Request IDs remain available to JSON and custom structured loggers.
+Pretty logs never truncate endpoint paths and never print request IDs. Request IDs remain available to JSON and custom structured loggers.
 
-JSON is the common case and is intentionally not labelled. Non-JSON payloads are labelled only when the type adds useful information, such as `multipart`, `csv`, `pdf`, `text`, or an image MIME type.
+The terminal palette is intentionally narrow:
+
+- `↗ METHOD /path` uses one cyan accent
+- status is the only semantic color: green for 2xx, cyan for 3xx, yellow for 4xx, red for 5xx/ERR
+- duration, payload sizes, sent-size metadata, and cache/backend policy use gray
+- error text does not introduce another competing semantic color
+
+`NO_COLOR`, non-TTY output, JSON logs, and custom structured loggers remain ANSI-free.
+
+JSON is the common response type and is intentionally not labelled. Non-JSON payloads are labelled only when the type adds useful information, such as `multipart`, `csv`, `pdf`, `text`, or an image MIME type.
 
 Response size is shown directly. Request size is the only size wrapped in parentheses:
 
 ```text
-@API POST /orders 201 42ms 842 B (128 B sent)
-@API POST /media 201 812ms 206 B (8.2 MB+ multipart sent)
+↗ POST /orders 201 42ms 842 B (128 B sent) backend
+↗ POST /media 201 812ms 206 B (8.2 MB+ multipart sent) backend
 ```
 
 Multipart sizes end in `+` because the bridge reports known field/file payload bytes without buffering the encoded multipart body merely to calculate boundary overhead.
-
-Terminal colors are selective and enabled automatically only for an interactive TTY. `@API` has its own accent, HTTP methods are differentiated, paths and ordinary timing stay subdued, status classes are colored by severity, and slow/large values are highlighted without adding noisy `SLOW` or `LARGE` words. `NO_COLOR`, non-TTY output, JSON logs, and custom structured loggers remain ANSI-free.
 
 The default logging level is:
 
@@ -422,32 +529,32 @@ logging: {
 }
 ```
 
-Body details are rendered as a tree rooted directly below the `A` in `@API`. Objects with up to three top-level keys stay on one line when all values are simple scalars:
+Objects with up to three top-level keys stay on one line when all values are simple scalars:
 
 ```text
-@API PATCH /events/01a0ecee-8967-7eb1-91a0-5e45014dc35b 200 36ms 646 B (19 B sent)
- └─ request body { status: 'paused' }
+↗ PATCH /events/123 200 36ms 646 B (19 B sent) backend
+  └─ request body { status: 'paused' }
 ```
 
 Larger or nested values expand automatically:
 
 ```text
-@API POST /orders 201 42ms 842 B (1.2 KB sent)
- └─ request body
-    {
-      quantity: 2,
-      type: 'adult',
-      addon: false,
-      customerId: 'customer-1'
-    }
+↗ POST /orders 201 42ms 842 B (1.2 KB sent) backend
+  └─ request body
+     {
+       quantity: 2,
+       type: 'adult',
+       addon: false,
+       customerId: 'customer-1'
+     }
 ```
 
 When multiple details are enabled, the same compact tree is used:
 
 ```text
-@API POST /orders 201 42ms 842 B (128 B sent)
- ├─ request body { quantity: 2, type: 'adult' }
- └─ response body { success: true, orderId: 'order-1' }
+↗ POST /orders 201 42ms 842 B (128 B sent) backend
+  ├─ request body { quantity: 2, type: 'adult' }
+  └─ response body { success: true, orderId: 'order-1' }
 ```
 
 `summary` reports shape information such as object key count, array length, byte size, or multipart field/file counts.
@@ -489,7 +596,7 @@ Pretty output remains compact even at `trace`; request IDs and sanitized backend
 
 ### Structured and file logging
 
-A custom logger receives redacted structured objects instead of preformatted strings:
+A custom logger receives redacted structured objects instead of preformatted strings, including the effective cache policy:
 
 ```ts
 const api = createNextApiBridge({
@@ -498,6 +605,8 @@ const api = createNextApiBridge({
     level: 'info',
     logger: {
       info(entry) {
+        // entry.cache.mode === 'cache' | 'backend'
+        // entry.cache.revalidate contains the configured lifetime when cached.
         myLogger.info(entry);
       },
       warn(entry) {
