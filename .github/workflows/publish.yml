@@ -10,8 +10,99 @@ permissions:
   contents: read
 
 jobs:
+  release:
+    name: Resolve release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Resolve release version and tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch origin main --tags
+
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          VERSION="$(node -p "require('./package.json').version")"
+          LOCK_VERSION="$(node -p "require('./package-lock.json').packages[''].version")"
+          TAG="v${VERSION}"
+          RELEASE_SHA="$(git rev-parse HEAD)"
+
+          if [[ "${LOCK_VERSION}" != "${VERSION}" ]]; then
+            echo "::error::package.json (${VERSION}) and package-lock.json (${LOCK_VERSION}) versions do not match."
+            exit 1
+          fi
+
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Only stable semantic versions can be published by this workflow. Found: ${VERSION}"
+            exit 1
+          fi
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+              echo "::error::Manual publishing must be started from the main branch."
+              exit 1
+            fi
+
+            MAIN_SHA="$(git rev-parse origin/main)"
+            if [[ "${RELEASE_SHA}" != "${MAIN_SHA}" ]]; then
+              echo "::error::main moved after this workflow started. Run the publish workflow again."
+              exit 1
+            fi
+
+            if git show-ref --verify --quiet "refs/tags/${TAG}"; then
+              echo "::error::Tag ${TAG} already exists."
+              exit 1
+            fi
+
+            if npm view "${PACKAGE_NAME}@${VERSION}" version >/dev/null 2>&1; then
+              echo "::error::${PACKAGE_NAME}@${VERSION} is already published."
+              exit 1
+            fi
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "${TAG}" -m "${PACKAGE_NAME} ${TAG}" "${RELEASE_SHA}"
+            git push origin "refs/tags/${TAG}"
+          else
+            if [[ "${{ github.ref_name }}" != "${TAG}" ]]; then
+              echo "::error::Tag ${{ github.ref_name }} does not match package version ${TAG}."
+              exit 1
+            fi
+          fi
+
+          if ! git branch -r --contains "${RELEASE_SHA}" | grep -q 'origin/main'; then
+            echo "::error::Release commit must belong to main."
+            exit 1
+          fi
+
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "sha=${RELEASE_SHA}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "### Release"
+            echo "- Package: \`${PACKAGE_NAME}\`"
+            echo "- Version: \`${VERSION}\`"
+            echo "- Tag: \`${TAG}\`"
+            echo "- Commit: \`${RELEASE_SHA}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
   verify:
     name: Verify Node ${{ matrix.node }} / Next ${{ matrix.next }}
+    needs: release
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -21,19 +112,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.release.outputs.tag }}
           fetch-depth: 0
-      - name: Ensure tag commit belongs to main
+
+      - name: Verify immutable release commit
+        shell: bash
         run: |
+          set -euo pipefail
           git fetch origin main
+          test "$(git rev-parse HEAD)" = "${{ needs.release.outputs.sha }}"
           git branch -r --contains HEAD | grep -q 'origin/main'
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
           registry-url: 'https://registry.npmjs.org'
-      - run: npm install
+
+      - run: npm ci
       - run: npm install --no-save next@${{ matrix.next }}
       - run: npm run test:matrix
+
       - name: Run packed production E2E
         run: npm run test:e2e
         env:
@@ -41,7 +140,10 @@ jobs:
           CI: 'true'
 
   publish:
-    needs: verify
+    name: Publish ${{ needs.release.outputs.tag }}
+    needs:
+      - release
+      - verify
     runs-on: ubuntu-latest
     environment: publish
     permissions:
@@ -49,9 +151,13 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
-      - run: npm install
+
+      - run: npm ci
       - run: npm publish
