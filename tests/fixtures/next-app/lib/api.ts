@@ -2,7 +2,15 @@ import { createNextApiBridge } from 'next-api-bridge';
 
 const baseUrl = process.env.API_URL!;
 
-export const api = createNextApiBridge({ baseUrl });
+export const api = createNextApiBridge({
+  baseUrl,
+  caching: {
+    enabled: true,
+    rules: [
+      { match: '/cache', revalidate: 3600, tags: ['e2e-cache'] },
+    ],
+  },
+});
 
 export const trustedApi = createNextApiBridge({
   baseUrl,
