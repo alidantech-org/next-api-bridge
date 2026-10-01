@@ -540,9 +540,22 @@ npm run test:e2e
 
 The E2E suite packs the package, installs the tarball into a real App Router fixture, runs a production `next build` and `next start`, starts a controllable backend, and executes Playwright tests. Publishing must not proceed until these gates pass.
 
-Releases are started manually from the **Publish to npm** workflow on `main`. The workflow reads the version from `package.json`, requires `package-lock.json` to match, creates the immutable `vX.Y.Z` tag automatically, verifies that the tagged commit belongs to `main`, runs the full Node/Next matrix, publishes through npm Trusted Publishing, and finally verifies that the exact version can be read and packed from the public npm registry before the workflow is considered successful. Pushes to `develop` never publish.
+Releases are started manually from the **Publish to npm** workflow on `main`. The workflow reads the version from `package.json`, requires `package-lock.json` to match, validates `RELEASE_NOTES.md`, creates the immutable `vX.Y.Z` tag automatically, verifies that the tagged commit belongs to `main`, runs the Node/Next compatibility and packed E2E gates, publishes through npm Trusted Publishing, and then creates a GitHub Release for that tag.
 
-Direct `vX.Y.Z` tag pushes remain supported, but the tag must match the package version and point to a commit contained in `main`.
+`RELEASE_NOTES.md` is intentionally the draft for only the current release. Its first line is the GitHub Release title and must begin with the current version, for example:
+
+```md
+# v0.1.9 — Short release title
+
+- First release note.
+- Second release note.
+```
+
+The remaining file content becomes the GitHub Release body. After publication, GitHub keeps that historical copy on the Release, so the repository file can be rewritten for the next version instead of accumulating old release notes in source control.
+
+npm can accept a publish before the new version is immediately visible from every public registry read. After `npm publish` succeeds, the workflow checks registry availability up to five times with exponential delays of 10, 20, 40, and 80 seconds. If the package becomes readable and packable, the workflow records that verification. If propagation is still pending after the fifth check, the workflow emits a warning rather than falsely failing an immutable version that npm has already accepted.
+
+Pushes to `develop` never publish. Direct `vX.Y.Z` tag pushes remain supported, but the tag must match the package version and point to a commit contained in `main`.
 
 ## References
 

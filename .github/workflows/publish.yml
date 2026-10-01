@@ -52,6 +52,22 @@ jobs:
             exit 1
           fi
 
+          if [[ ! -f RELEASE_NOTES.md ]]; then
+            echo "::error::RELEASE_NOTES.md is required for publishing."
+            exit 1
+          fi
+
+          RELEASE_TITLE="$(sed -n '1s/^# //p' RELEASE_NOTES.md)"
+          if [[ -z "${RELEASE_TITLE}" || ( "${RELEASE_TITLE}" != "v${VERSION}" && "${RELEASE_TITLE}" != "v${VERSION} "* ) ]]; then
+            echo "::error::RELEASE_NOTES.md must start with '# v${VERSION}' followed by an optional release title."
+            exit 1
+          fi
+
+          if [[ -z "$(tail -n +2 RELEASE_NOTES.md | tr -d '[:space:]')" ]]; then
+            echo "::error::RELEASE_NOTES.md must contain release notes below the title."
+            exit 1
+          fi
+
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
               echo "::error::Manual publishing must be started from the main branch."
@@ -207,8 +223,9 @@ jobs:
           PACKAGE_NAME="$(node -p "require('./package.json').name")"
           VERSION="$(node -p "require('./package.json').version")"
           REGISTRY="https://registry.npmjs.org"
+          DELAYS=(10 20 40 80)
 
-          for attempt in $(seq 1 30); do
+          for attempt in 1 2 3 4 5; do
             PUBLISHED_VERSION="$(
               npm view "${PACKAGE_NAME}@${VERSION}" version \
                 --registry="${REGISTRY}" \
@@ -232,9 +249,55 @@ jobs:
               fi
             fi
 
-            echo "Registry has not exposed ${PACKAGE_NAME}@${VERSION} yet (attempt ${attempt}/30)."
-            sleep 10
+            if (( attempt < 5 )); then
+              DELAY="${DELAYS[$((attempt - 1))]}"
+              echo "Registry has not exposed ${PACKAGE_NAME}@${VERSION} yet (attempt ${attempt}/5); retrying in ${DELAY}s."
+              sleep "${DELAY}"
+            fi
           done
 
-          echo "::error::npm accepted the publish request, but ${PACKAGE_NAME}@${VERSION} did not become installable from the public registry within 5 minutes."
-          exit 1
+          echo "::warning::npm accepted ${PACKAGE_NAME}@${VERSION}, but public registry propagation is still pending after 5 checks over about 2m30s."
+          echo "The publish remains successful because npm already accepted the immutable package version."
+
+  github_release:
+    name: Create GitHub Release
+    needs:
+      - release
+      - publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Verify immutable release commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ needs.release.outputs.sha }}"
+
+      - name: Create GitHub Release from current release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "GitHub Release ${RELEASE_TAG} already exists."
+            exit 0
+          fi
+
+          RELEASE_TITLE="$(sed -n '1s/^# //p' RELEASE_NOTES.md)"
+          BODY_FILE="$(mktemp)"
+          tail -n +2 RELEASE_NOTES.md | sed '1{/^[[:space:]]*$/d;}' > "${BODY_FILE}"
+
+          gh release create "${RELEASE_TAG}" \
+            --verify-tag \
+            --title "${RELEASE_TITLE}" \
+            --notes-file "${BODY_FILE}"
+
