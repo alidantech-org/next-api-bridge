@@ -1,8 +1,7 @@
-# v0.1.9 — Smart caching and clearer request logs
+# v0.1.10 — Flatter request logs
 
-- Added opt-in bridge-level cache rules on top of Next.js server `fetch`, with per-request cache overrides and the existing raw `cache`/`next` options preserved.
-- Added automatic endpoint cache tags plus `revalidateApiCache`, `revalidateCache`, and `expireCache` helpers for targeted refresh after mutations.
-- Added truthful cache-policy metadata to pretty and structured logs without claiming unsupported cache hit/miss detection.
-- Replaced the `@API` prefix with the compact `↗` request identity.
-- Refined terminal logs into a flatter `↗ STATUS METHOD /path` layout: request identity/path use one cyan accent, status is semantic, timing/size metadata is gray, cache policy is magenta, live backend requests omit a source suffix, and byte units use compact forms such as `210b` and `1.2kb`.
-- Expanded packed production E2E coverage to verify rule-based caching, live overrides, and endpoint invalidation across supported Next.js versions.
+- Moved the status code before method and path for a flatter, faster-to-scan row: `↗ 200 GET /events ...`.
+- Removed the default `backend` suffix from live requests so the common log path stays compact.
+- Kept cache policy visible only when caching is configured, with cache metadata highlighted in magenta.
+- Compacted byte units to lowercase no-space forms such as `210b`, `1.2kb`, and `8mb`.
+- Preserved semantic status coloring, cyan request identity/path, gray timing and size metadata, and all structured cache metadata.
