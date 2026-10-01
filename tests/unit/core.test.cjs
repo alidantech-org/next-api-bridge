@@ -272,7 +272,7 @@ test('request context forwards only configured safe values and generates IDs', (
   assert.equal(result.headers['x-client-ip'], '203.0.113.10');
   assert.equal(result.headers['x-client-origin'], 'https://app.example.com');
   assert.match(result.headers['x-request-id'], /^[0-9a-f-]{36}$/i);
-  assert.equal(result.headers['x-api-bridge'], 'next-api-bridge/0.1.7');
+  assert.equal(result.headers['x-api-bridge'], 'next-api-bridge/0.1.8');
 });
 
 
