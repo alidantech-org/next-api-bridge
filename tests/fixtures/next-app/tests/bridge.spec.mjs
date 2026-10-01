@@ -54,7 +54,7 @@ test('browser context is forwarded safely while spoofed IP is ignored by default
   expect(result.body.acceptLanguage.toLowerCase()).toContain('en-ke');
   expect(result.body.traceparent).toBe('00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01');
   expect(result.body.requestId).toBe('browser-request-id');
-  expect(result.body.bridge).toBe('next-api-bridge/0.1.8');
+  expect(result.body.bridge).toBe('next-api-bridge/0.1.9');
   expect(result.body.clientIp).toBeNull();
   expect(result.body.query).toEqual({ active: 'false', page: '0', search: '' });
   expect(JSON.stringify(result.body.query)).not.toMatch(/undefined|null/);
@@ -83,10 +83,12 @@ test('HTTP status codes and empty responses remain distinguishable', async ({ pa
   expect(empty.errorCode).toBeUndefined();
 });
 
-test('force-cache reuses backend data and no-store stays fresh', async ({ page }) => {
+test('bridge cache rules reuse data, live overrides stay fresh, and endpoint invalidation refreshes', async ({ page }) => {
   const result = await submitAndRead(page, 'cache', 'cache-result');
   expect(result.forceOne.body.count).toBe(result.forceTwo.body.count);
   expect(result.freshTwo.body.count).toBe(result.freshOne.body.count + 1);
+  expect(result.invalidateOne.body.count).toBe(result.invalidateTwo.body.count);
+  expect(result.invalidateThree.body.count).toBe(result.invalidateTwo.body.count + 1);
 });
 
 test('Server Action responses contain plain records and no transport secrets', async ({ page }) => {

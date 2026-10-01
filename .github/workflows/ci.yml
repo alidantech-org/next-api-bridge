@@ -37,7 +37,7 @@ jobs:
         if: matrix.node == 22 && matrix.next == 16
         uses: actions/upload-artifact@v4
         with:
-          name: package-lock-0.1.8
+          name: package-lock-0.1.9
           path: package-lock.json
 
   e2e:

@@ -62,8 +62,15 @@ export interface BridgeLogPayload {
   };
 }
 
+export interface BridgeLogCache {
+  mode: 'backend' | 'cache';
+  revalidate?: number | false;
+  tags?: string[];
+  source?: 'default' | 'rule' | 'request' | 'raw';
+}
+
 export interface SafeLogEntry {
-  event: 'request' | 'response' | 'error' | 'cookie';
+  event: 'request' | 'response' | 'error' | 'cookie' | 'cache';
   method?: string;
   path?: string;
   url?: string;
@@ -75,5 +82,6 @@ export interface SafeLogEntry {
   errorCode?: string;
   request?: BridgeLogPayload;
   response?: BridgeLogPayload;
+  cache?: BridgeLogCache;
   details?: Record<string, unknown>;
 }

@@ -239,10 +239,121 @@ test('timeout and caller abort signals are combined safely', async () => {
   combined.cleanup();
 });
 
-test('conflicting cache options are rejected', () => {
+test('cache options validate conflicts and keep high-level caching separate from raw Next options', () => {
   assert.throws(() => testing.validateCacheOptions({ cache: 'no-store', next: { revalidate: 30 } }), /conflicts/);
   assert.throws(() => testing.validateCacheOptions({ cache: 'force-cache', next: { revalidate: 0 } }), /conflicts/);
-  assert.doesNotThrow(() => testing.validateCacheOptions({ cache: 'force-cache', next: { revalidate: 30, tags: ['events'] } }));
+  assert.throws(() => testing.validateCacheOptions({
+    caching: { revalidate: 30 },
+    cache: 'force-cache',
+  }), /cannot be combined/);
+  assert.doesNotThrow(() => testing.validateCacheOptions({
+    caching: { revalidate: 30, tags: ['events'] },
+  }));
+});
+
+test('bridge caching is opt-in and resolves first matching endpoint rules', () => {
+  const options = testing.validateAndNormalizeOptions({
+    baseUrl: 'https://api.example.com/v1',
+    caching: {
+      enabled: true,
+      default: false,
+      rules: [
+        { match: '/reference/**', revalidate: 3600, tags: ['reference'] },
+        { match: '/events/*', revalidate: 30, tags: ['events'] },
+      ],
+    },
+  });
+
+  const reference = testing.resolveCacheRequest(
+    'GET',
+    '/reference/timezones',
+    {},
+    options.caching,
+  );
+  assert.equal(reference.cache, 'force-cache');
+  assert.equal(reference.next.revalidate, 3600);
+  assert.deepEqual(reference.next.tags, [
+    testing.buildApiCacheTag('/reference/timezones'),
+    'reference',
+  ]);
+  assert.deepEqual(reference.log, {
+    mode: 'cache',
+    revalidate: 3600,
+    tags: reference.next.tags,
+    source: 'rule',
+  });
+
+  const event = testing.resolveCacheRequest('GET', '/events/event-1', {}, options.caching);
+  assert.equal(event.next.revalidate, 30);
+  assert.equal(event.log.source, 'rule');
+
+  const unmatched = testing.resolveCacheRequest('GET', '/auth/me', {}, options.caching);
+  assert.equal(unmatched.cache, 'no-store');
+  assert.equal(unmatched.log.mode, 'backend');
+
+  const mutation = testing.resolveCacheRequest('POST', '/reference/timezones', {}, options.caching);
+  assert.equal(mutation.cache, 'no-store');
+  assert.equal(mutation.log.mode, 'backend');
+});
+
+test('per-request caching overrides rules while raw Next cache options remain supported', () => {
+  const caching = testing.normalizeCaching({
+    enabled: true,
+    default: { revalidate: 60, tags: ['default'] },
+  });
+
+  const disabled = testing.resolveCacheRequest(
+    'GET',
+    '/events',
+    { caching: false },
+    caching,
+  );
+  assert.equal(disabled.cache, 'no-store');
+  assert.equal(disabled.log.source, 'request');
+
+  const request = testing.resolveCacheRequest(
+    'GET',
+    '/events',
+    { caching: { revalidate: 10, tags: ['events'] } },
+    caching,
+  );
+  assert.equal(request.cache, 'force-cache');
+  assert.equal(request.next.revalidate, 10);
+  assert.equal(request.log.source, 'request');
+
+  const raw = testing.resolveCacheRequest(
+    'GET',
+    '/events',
+    { cache: 'force-cache', next: { revalidate: 5, tags: ['raw'] } },
+    caching,
+  );
+  assert.equal(raw.cache, 'force-cache');
+  assert.deepEqual(raw.next, { revalidate: 5, tags: ['raw'] });
+  assert.equal(raw.log.source, 'raw');
+
+  assert.throws(
+    () => testing.resolveCacheRequest(
+      'POST',
+      '/orders',
+      { caching: { revalidate: 10 } },
+      caching,
+    ),
+    /limited to GET/,
+  );
+});
+
+test('cache path helpers ignore query variants and preserve API base paths safely', () => {
+  assert.equal(
+    testing.relativeApiPath(
+      'https://api.example.com/v1/',
+      'https://api.example.com/v1/events/event-1?include=prices',
+    ),
+    '/events/event-1',
+  );
+  assert.equal(
+    testing.buildApiCacheTag('/events/event-1?include=prices'),
+    testing.buildApiCacheTag('/events/event-1'),
+  );
 });
 
 test('request context forwards only configured safe values and generates IDs', () => {
@@ -272,7 +383,7 @@ test('request context forwards only configured safe values and generates IDs', (
   assert.equal(result.headers['x-client-ip'], '203.0.113.10');
   assert.equal(result.headers['x-client-origin'], 'https://app.example.com');
   assert.match(result.headers['x-request-id'], /^[0-9a-f-]{36}$/i);
-  assert.equal(result.headers['x-api-bridge'], 'next-api-bridge/0.1.8');
+  assert.equal(result.headers['x-api-bridge'], 'next-api-bridge/0.1.9');
 });
 
 
@@ -305,7 +416,7 @@ test('logging config supports compact safe defaults and bounded inspection', () 
   }), /non-negative integer/);
 });
 
-test('pretty logs use the @API identity without table padding or request IDs', () => {
+test('pretty logs use the arrow identity, full paths, and backend/cache metadata', () => {
   const options = testing.validateAndNormalizeOptions({
     baseUrl: 'https://api.example.com',
     logging: { level: 'trace', color: false },
@@ -321,12 +432,24 @@ test('pretty logs use the @API identity without table padding or request IDs', (
     requestId: 'f634cf2c-4440-4e51-a1be-8e424e125e1d',
     request: { bodyBytes: 128, bodyType: 'json' },
     response: { bodyBytes: 842, bodyType: 'json' },
+    cache: { mode: 'backend', source: 'default' },
   }, options);
 
-  assert.equal(line, `@API POST ${longPath} 201 42ms 842 B (128 B sent)`);
+  assert.equal(line, `↗ POST ${longPath} 201 42ms 842 B (128 B sent) backend`);
   assert.doesNotMatch(line, /json/i);
   assert.doesNotMatch(line, /id=/i);
   assert.doesNotMatch(line, /\.\.\./);
+
+  const cached = testing.formatPrettyLogLine({
+    event: 'response',
+    method: 'GET',
+    path: '/reference/timezones',
+    status: 200,
+    durationMs: 8,
+    response: { bodyBytes: 10.6 * 1024, bodyType: 'json' },
+    cache: { mode: 'cache', revalidate: 3600, source: 'rule' },
+  }, options);
+  assert.equal(cached, '↗ GET /reference/timezones 200 8ms 10.6 KB cache 1h');
 
   const multipart = testing.formatPrettyLogLine({
     event: 'response',
@@ -340,13 +463,13 @@ test('pretty logs use the @API identity without table padding or request IDs', (
       multipart: { fields: 2, files: 1, payloadBytes: 8 * 1024 * 1024, exact: false },
     },
     response: { bodyBytes: 206, bodyType: 'json' },
+    cache: { mode: 'backend', source: 'default' },
   }, options);
 
-  assert.equal(multipart, '@API POST /media 201 812ms 206 B (8 MB+ multipart sent)');
-  assert.doesNotMatch(multipart, /LARGE|SLOW/);
+  assert.equal(multipart, '↗ POST /media 201 812ms 206 B (8 MB+ multipart sent) backend');
 });
 
-test('pretty log colors give bridge output its own restrained identity', () => {
+test('pretty log colors use one accent, semantic status, and gray metadata only', () => {
   const options = testing.validateAndNormalizeOptions({
     baseUrl: 'https://api.example.com',
     logging: { level: 'info', color: true },
@@ -359,12 +482,13 @@ test('pretty log colors give bridge output its own restrained identity', () => {
     status: 200,
     durationMs: 12,
     response: { bodyBytes: 759, bodyType: 'json' },
+    cache: { mode: 'backend', source: 'default' },
   }, options);
 
-  assert.match(line, /\x1b\[35m@API\x1b\[0m/);
-  assert.match(line, /\x1b\[36mGET\x1b\[0m/);
-  assert.match(line, /\x1b\[90m\/events\x1b\[0m/);
+  assert.match(line, /\x1b\[36m↗ GET \/events\x1b\[0m/);
   assert.match(line, /\x1b\[32m200\x1b\[0m/);
+  assert.match(line, /\x1b\[90m12ms 759 B backend\x1b\[0m/);
+  assert.doesNotMatch(line, /\x1b\[35m|\x1b\[34m/);
 });
 
 test('pretty body details stay inline for three simple keys and expand complex bodies', () => {
@@ -388,7 +512,7 @@ test('pretty body details stay inline for three simple keys and expand complex b
   }, compact);
 
   assert.deepEqual(compactLines, [
-    " └─ request body { quantity: 2, type: 'adult', addon: false }",
+    "  └─ request body { quantity: 2, type: 'adult', addon: false }",
   ]);
 
   const expandedLines = testing.formatPrettyLogDetails({
@@ -405,9 +529,9 @@ test('pretty body details stay inline for three simple keys and expand complex b
     },
   }, compact);
 
-  assert.equal(expandedLines[0], ' └─ request body');
-  assert.equal(expandedLines[1], '    {');
-  assert.equal(expandedLines.at(-1), '    }');
+  assert.equal(expandedLines[0], '  └─ request body');
+  assert.equal(expandedLines[1], '     {');
+  assert.equal(expandedLines.at(-1), '     }');
 
   const nestedLines = testing.formatPrettyLogDetails({
     event: 'response',
@@ -417,11 +541,11 @@ test('pretty body details stay inline for three simple keys and expand complex b
     },
   }, compact);
 
-  assert.equal(nestedLines[0], ' └─ request body');
-  assert.equal(nestedLines[1], '    {');
+  assert.equal(nestedLines[0], '  └─ request body');
+  assert.equal(nestedLines[1], '     {');
 });
 
-test('multiple pretty details use a tree rooted below the A in @API', () => {
+test('multiple pretty details keep one compact tree under the arrow request line', () => {
   const options = testing.validateAndNormalizeOptions({
     baseUrl: 'https://api.example.com',
     logging: {
@@ -439,8 +563,8 @@ test('multiple pretty details use a tree rooted below the A in @API', () => {
   }, options);
 
   assert.deepEqual(lines, [
-    " ├─ request body { status: 'paused' }",
-    ' └─ response body { success: true, updated: true }',
+    "  ├─ request body { status: 'paused' }",
+    '  └─ response body { success: true, updated: true }',
   ]);
 });
 

@@ -8,6 +8,7 @@ import {
 } from './constants';
 import { normalizeCookiePolicy } from '../cookies/policy';
 import { normalizeLogging, type NormalizedLoggingOptions } from '../logger/config';
+import { normalizeCaching, type NormalizedCachingOptions } from '../request/cache';
 import {
   assertValidHeaderName,
   isForbiddenRequestHeader,
@@ -54,6 +55,7 @@ export interface NormalizedOptions {
   verbose?: string;
   logger?: BridgeLogger;
   logging: NormalizedLoggingOptions;
+  caching: NormalizedCachingOptions;
   requestContext: NormalizedRequestContextOptions;
   cookiePolicy: NormalizedCookiePolicy;
 }
@@ -227,6 +229,7 @@ export function validateAndNormalizeOptions(options: ApiBridgeOptions): Normaliz
     verbose: options.verbose,
     logger: options.logger,
     logging: normalizeLogging(options),
+    caching: normalizeCaching(options.caching),
     requestContext: normalizeRequestContext(options.requestContext),
     cookiePolicy: normalizeCookiePolicy(options.cookiePolicy),
   };

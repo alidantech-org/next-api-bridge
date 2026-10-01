@@ -13,7 +13,7 @@ import { buildRequestLogPayload, headersToRecord } from '../logger/metadata';
 import { sanitizeUrlForLog } from '../logger/redact';
 import { assertAllowedCustomHeaders, validateHeaderValue } from '../security/headers';
 import { buildRequestContextHeaders } from './context';
-import { validateCacheOptions } from './cache';
+import { relativeApiPath, resolveCacheRequest } from './cache';
 import { combineAbortSignals } from './signal';
 import { buildRequestUrl } from './url';
 import { parseApiResponseWithMeta } from '../response/parse-response';
@@ -61,12 +61,18 @@ export async function prepareBridgeRequest({
   cookieStore: CookieStoreLike;
   incomingHeaders: Headers;
 }): Promise<PrepareRequestResult> {
-  validateCacheOptions(requestOptions);
   const url = buildRequestUrl(
     normalizedOptions.baseUrl,
     path,
     requestOptions.params,
     requestOptions.query,
+  );
+  const cachePath = relativeApiPath(normalizedOptions.baseUrl, url);
+  const resolvedCache = resolveCacheRequest(
+    method.toUpperCase(),
+    cachePath,
+    requestOptions,
+    normalizedOptions.caching,
   );
   const context = buildRequestContextHeaders(
     incomingHeaders,
@@ -109,18 +115,19 @@ export async function prepareBridgeRequest({
   const combinedSignal = combineAbortSignals(requestOptions.signal, requestOptions.timeoutMs);
   const fetchOptions: RequestInit & { next?: RequestOptions['next'] } = {
     method,
-    cache: requestOptions.cache ?? 'no-store',
+    cache: resolvedCache.cache,
     credentials: 'include',
     headers: outgoingHeaders,
     body: serialized.body,
     signal: combinedSignal.signal,
   };
-  if (requestOptions.next) fetchOptions.next = requestOptions.next;
+  if (resolvedCache.next) fetchOptions.next = resolvedCache.next;
 
   return {
     url,
     fetchOptions,
     requestId: context.requestId,
+    cache: resolvedCache.log,
     cleanupSignal: combinedSignal.cleanup,
     didTimeout: combinedSignal.didTimeout,
   };
@@ -228,6 +235,7 @@ export async function executeBridgeRequest<T>({
         errorCode: result.errorCode,
         request: requestPayload,
         response: responsePayload,
+        cache: prepared.cache,
         details: cookieSync.attempted ? { cookieSync } : undefined,
       });
     }
@@ -255,6 +263,7 @@ export async function executeBridgeRequest<T>({
         operationName: requestOptions.operationName,
         errorCode,
         message,
+        cache: prepared.cache,
         request: buildLoggedRequestPayload(
           body,
           prepared,

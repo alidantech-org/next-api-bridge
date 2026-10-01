@@ -1,6 +1,7 @@
 'use server';
 
 import { cookies } from 'next/headers';
+import { revalidateApiCache } from 'next-api-bridge/cache';
 import { api, originApi, trustedApi } from '../lib/api';
 
 export async function loginAction(_previous: unknown, _formData: FormData) {
@@ -38,9 +39,23 @@ export async function emptyAction(_previous: unknown, _formData: FormData) {
 }
 
 export async function cacheAction(_previous: unknown, _formData: FormData) {
-  const forceOne = await api.get('/cache', { cache: 'force-cache', query: { key: 'force' } });
-  const forceTwo = await api.get('/cache', { cache: 'force-cache', query: { key: 'force' } });
-  const freshOne = await api.get('/cache', { cache: 'no-store', query: { key: 'fresh' } });
-  const freshTwo = await api.get('/cache', { cache: 'no-store', query: { key: 'fresh' } });
-  return { forceOne, forceTwo, freshOne, freshTwo };
+  const forceOne = await api.get('/cache', { query: { key: 'force' } });
+  const forceTwo = await api.get('/cache', { query: { key: 'force' } });
+  const freshOne = await api.get('/cache', { caching: false, query: { key: 'fresh' } });
+  const freshTwo = await api.get('/cache', { caching: false, query: { key: 'fresh' } });
+
+  const invalidateOne = await api.get('/cache', { query: { key: 'invalidate' } });
+  const invalidateTwo = await api.get('/cache', { query: { key: 'invalidate' } });
+  await revalidateApiCache('/cache');
+  const invalidateThree = await api.get('/cache', { query: { key: 'invalidate' } });
+
+  return {
+    forceOne,
+    forceTwo,
+    freshOne,
+    freshTwo,
+    invalidateOne,
+    invalidateTwo,
+    invalidateThree,
+  };
 }

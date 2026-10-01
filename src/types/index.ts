@@ -1,10 +1,14 @@
 export type {
   ApiBridgeOptions,
+  BridgeCachePolicy,
+  BridgeCacheRule,
+  BridgeCachingOptions,
   ForwardableRequestHeader,
   NextCacheOptions,
   PrepareRequestResult,
   RequestContextOptions,
   RequestOptions,
+  ResolvedBridgeCache,
   TrustProxyConfig,
 } from './client';
 
