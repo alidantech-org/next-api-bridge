@@ -213,6 +213,37 @@ export function formatPrettyLogDetails(
   return lines;
 }
 
+export function formatJsonLogLine(
+  entry: SafeLogEntry,
+  options: NormalizedLoggingOptions,
+): string {
+  const json = JSON.stringify(entry);
+  if (!shouldUseColor(options.color)) return json;
+
+  const color = createTerminalColors(true);
+  const token = /("(?:\\u[0-9a-fA-F]{4}|\\[^u]|[^\\"])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+
+  return json.replace(
+    token,
+    (
+      match,
+      stringValue: string | undefined,
+      keySuffix: string | undefined,
+      literal: string | undefined,
+    ) => {
+      if (stringValue !== undefined) {
+        if (keySuffix !== undefined) {
+          return `${color.cyan(stringValue)}${color.gray(keySuffix)}`;
+        }
+        return color.green(stringValue);
+      }
+
+      if (literal !== undefined) return color.magenta(literal);
+      return color.yellow(match);
+    },
+  );
+}
+
 export function formatPrettyLogLine(
   entry: SafeLogEntry,
   options: NormalizedLoggingOptions,
