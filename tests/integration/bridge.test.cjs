@@ -131,7 +131,7 @@ test('browser context headers and request IDs reach the backend', async () => {
   assert.equal(lastRequest.headers['accept-language'], 'en-KE,en;q=0.9');
   assert.equal(lastRequest.headers.traceparent, '00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01');
   assert.equal(lastRequest.headers['x-request-id'], 'incoming-request-id');
-  assert.equal(lastRequest.headers['x-api-bridge'], 'next-api-bridge/0.1.8');
+  assert.equal(lastRequest.headers['x-api-bridge'], 'next-api-bridge/0.1.9');
 
   const generated = await request();
   assert.match(lastRequest.headers['x-request-id'], /^[0-9a-f-]{36}$/i);
