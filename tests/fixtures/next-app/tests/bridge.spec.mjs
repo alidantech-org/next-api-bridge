@@ -83,10 +83,12 @@ test('HTTP status codes and empty responses remain distinguishable', async ({ pa
   expect(empty.errorCode).toBeUndefined();
 });
 
-test('force-cache reuses backend data and no-store stays fresh', async ({ page }) => {
+test('bridge cache rules reuse data, live overrides stay fresh, and endpoint invalidation refreshes', async ({ page }) => {
   const result = await submitAndRead(page, 'cache', 'cache-result');
   expect(result.forceOne.body.count).toBe(result.forceTwo.body.count);
   expect(result.freshTwo.body.count).toBe(result.freshOne.body.count + 1);
+  expect(result.invalidateOne.body.count).toBe(result.invalidateTwo.body.count);
+  expect(result.invalidateThree.body.count).toBe(result.invalidateTwo.body.count + 1);
 });
 
 test('Server Action responses contain plain records and no transport secrets', async ({ page }) => {
