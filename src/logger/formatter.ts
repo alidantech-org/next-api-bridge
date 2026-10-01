@@ -26,6 +26,19 @@ export function formatDuration(durationMs?: number): string {
   return `${trimNumber((durationMs / 1000).toFixed(durationMs < 10_000 ? 2 : 1))}s`;
 }
 
+function formatCacheLifetime(revalidate?: number | false): string {
+  if (revalidate === false || revalidate === undefined) return 'cache';
+  if (revalidate >= 86_400 && revalidate % 86_400 === 0) return `cache ${revalidate / 86_400}d`;
+  if (revalidate >= 3_600 && revalidate % 3_600 === 0) return `cache ${revalidate / 3_600}h`;
+  if (revalidate >= 60 && revalidate % 60 === 0) return `cache ${revalidate / 60}m`;
+  return `cache ${revalidate}s`;
+}
+
+function cacheDescription(entry: SafeLogEntry): string {
+  if (!entry.cache || entry.cache.mode === 'backend') return 'backend';
+  return formatCacheLifetime(entry.cache.revalidate);
+}
+
 function fullPath(path?: string, url?: string): string {
   if (path) return path;
   if (!url) return '/';
@@ -80,31 +93,7 @@ function colorStatus(status: string, color: ReturnType<typeof createTerminalColo
   if (numeric >= 400) return color.yellow(status);
   if (numeric >= 300) return color.cyan(status);
   if (numeric >= 200) return color.green(status);
-  return color.gray(status);
-}
-
-function colorMethod(method: string, color: ReturnType<typeof createTerminalColors>): string {
-  switch (method) {
-    case 'GET':
-      return color.cyan(method);
-    case 'POST':
-    case 'PUT':
-      return color.blue(method);
-    case 'PATCH':
-      return color.yellow(method);
-    case 'DELETE':
-      return color.red(method);
-    case 'HEAD':
-    case 'OPTIONS':
-      return color.magenta(method);
-    default:
-      return color.cyan(method);
-  }
-}
-
-function largePayload(entry: SafeLogEntry, threshold: number | false): boolean {
-  if (threshold === false) return false;
-  return Math.max(entry.request?.bodyBytes ?? 0, entry.response?.bodyBytes ?? 0) >= threshold;
+  return status;
 }
 
 function summarizeBody(body: unknown, bytes?: number): Record<string, unknown> {
@@ -189,7 +178,7 @@ function inspectValue(
     maxStringLength: options.inspect.maxStringLength,
     breakLength: inline ? Number.POSITIVE_INFINITY : options.inspect.breakLength,
     compact: inline ? true : false,
-    colors: shouldUseColor(options.color),
+    colors: false,
   });
 }
 
@@ -205,8 +194,8 @@ export function formatPrettyLogDetails(
 
   details.forEach((detail, index) => {
     const last = index === details.length - 1;
-    const branch = last ? ' └─' : ' ├─';
-    const continuation = last ? '    ' : ' │  ';
+    const branch = last ? '  └─' : '  ├─';
+    const continuation = last ? '     ' : '  │  ';
     const inline = shouldInline(detail.value);
     const rendered = inspectValue(detail.value, options, inline);
 
@@ -236,43 +225,23 @@ export function formatPrettyLogLine(
   const duration = formatDuration(entry.durationMs);
   const responseSize = payloadDescription(entry.response, false);
   const requestSize = payloadDescription(entry.request, true);
+  const cache = cacheDescription(entry);
 
-  const slow = options.slowRequestMs !== false &&
-    entry.durationMs !== undefined &&
-    entry.durationMs >= options.slowRequestMs;
-  const large = largePayload(entry, options.largeBodyBytes);
+  const prefix = color.cyan(`↗ ${method} ${path}`);
+  const metadata = [
+    duration,
+    responseSize,
+    requestSize ? `(${requestSize})` : '',
+    cache,
+  ].filter(Boolean).join(' ');
 
-  const parts = [
-    color.magenta('@API'),
-    colorMethod(method, color),
-    color.gray(path),
-    colorStatus(status, color),
-  ];
+  let line = [prefix, colorStatus(status, color), metadata ? color.gray(metadata) : '']
+    .filter(Boolean)
+    .join(' ');
 
-  if (duration) {
-    parts.push(slow ? color.yellow(duration) : color.gray(duration));
-  }
-
-  if (responseSize) {
-    parts.push(large ? color.yellow(responseSize) : color.cyan(responseSize));
-  }
-
-  if (requestSize) {
-    const sent = `(${requestSize})`;
-    parts.push(large ? color.yellow(sent) : color.magenta(sent));
-  }
-
-  let line = parts.join(' ');
-  if (entry.errorCode) {
-    line += ` ${color.red(entry.errorCode)}`;
-  }
+  if (entry.errorCode) line += ` ${entry.errorCode}`;
   if (entry.message && entry.message !== 'OK' && entry.message !== 'Success') {
-    const message = entry.status !== undefined && entry.status >= 500
-      ? color.red(entry.message)
-      : entry.status !== undefined && entry.status >= 400
-        ? color.yellow(entry.message)
-        : color.cyan(entry.message);
-    line += ` — ${message}`;
+    line += ` — ${entry.message}`;
   }
 
   return line;
